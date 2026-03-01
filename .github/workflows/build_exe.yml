@@ -22,11 +22,17 @@ jobs:
           
       - name: Build EXE
         run: pyinstaller MacroStudio.spec
-        
-      - name: Upload EXE to Release
+
+      - name: Zip Build Folder
+        run: |
+          Compress-Archive -Path dist/MacroStudio/* -DestinationPath dist/MacroStudio-Win64.zip
+        shell: pwsh
+
+      - name: Upload Zip to Release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: dist/MacroStudio.exe
-          asset_name: MacroStudio.exe
+          file: dist/MacroStudio-Win64.zip
+          asset_name: MacroStudio-Win64.zip
           tag: ${{ github.ref }}
+          overwrite: true
