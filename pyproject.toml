@@ -1,7 +1,8 @@
 [project]
 name = "macro-studio"
 dynamic = ["version"]
-description = "A local desktop automation tool"
+description = "An advanced local macro recorder and desktop automation framework for complex workflows."
+readme = "README.md"
 dependencies = [
     "PySide6",
     "opencv-python",
