@@ -12,14 +12,14 @@ from pynput import keyboard
 from macro_studio.core.types_and_enums import LogPacket, LogLevel, LogErrorPacket, WorkerState
 from macro_studio.core.utils import global_logger
 from macro_studio.version import __version__
-from .tabs.recorder_tab import RecorderTab
-from .tabs.task_manager_tab import TaskManagerTab
-from .theme_manager import ThemeManager
-from .tabs.variables_tab import VariablesTab
-from .overlay import TransparentOverlay
-from .widgets.console import LogWidget
-from .widgets.main_window.integrated_header import IntegratedHeader
-from .widgets.main_window.runtime_widget import RuntimeWidget
+from macro_studio.ui.tabs.recorder_tab import RecorderTab
+from macro_studio.ui.tabs.task_manager_tab import TaskManagerTab
+from macro_studio.ui.theme_manager import ThemeManager
+from macro_studio.ui.tabs.variables_tab import VariablesTab
+from macro_studio.ui.overlay import TransparentOverlay
+from macro_studio.ui.widgets.console import LogWidget
+from macro_studio.ui.widgets.main_window.integrated_header import IntegratedHeader
+from macro_studio.ui.widgets.main_window.runtime_widget import RuntimeWidget
 
 
 if TYPE_CHECKING:

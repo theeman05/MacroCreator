@@ -293,4 +293,4 @@ class SneakyTextEditor(SneakyWidget):
         super().setValue(new_value or None)
 
     def getDisplayStr(self):
-        return f"Text: {self.value if self.value else "Enter Text"}"
+        return f"Text: {self.value if self.value else 'Enter Text'}"

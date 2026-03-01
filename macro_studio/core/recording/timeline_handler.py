@@ -176,7 +176,7 @@ class _MoveData:
 class MoveStepsCommand(QUndoCommand):
     def __init__(self, model, sorted_indices: list[int], adjusted_target: int):
         len_steps = len(sorted_indices)
-        description = f"Move {len_steps} Step{"s" if len_steps > 1 else ""}"
+        description = f"Move {len_steps} Step{'s' if len_steps > 1 else ''}"
         super().__init__(description)
         self.model = model
 

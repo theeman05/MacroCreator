@@ -160,7 +160,8 @@ class RecorderTab(QWidget):
             self.header_widget.task_selector.setCurrentItem(new_task)
 
         if insert_at is None: insert_at = self.timeline_model.count()
-        self.undo_stack.beginMacro(f"{"Add" if not dupe_lol else "Duplicate"} {data.action_type.value.title()}")
+
+        self.undo_stack.beginMacro(f"{'Add' if not dupe_lol else 'Duplicate'} {data.action_type.value.title()}")
         try:
             self.undo_stack.push(AddStepCommand(self.timeline_model, insert_at, data))
 

@@ -12,7 +12,8 @@ dependencies = [
     "pynput",
     "numpy",
     "qtawesome",
-    "shiboken6"
+    "shiboken6",
+    "pyperclip"
 ]
 
 [tool.setuptools.dynamic]
