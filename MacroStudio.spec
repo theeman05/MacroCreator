@@ -6,7 +6,6 @@ a = Analysis(
     binaries=[],
     datas=[('macro_studio/assets', 'assets'), ('macro_studio/ui/templates', 'ui/templates')],
     hiddenimports=[
-    'macro_studio.ui.tabs.recorder_tab',
     'PySide6.QtCore',
     'shiboken6'
     ],
