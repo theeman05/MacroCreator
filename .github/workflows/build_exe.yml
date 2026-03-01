@@ -23,7 +23,7 @@ jobs:
           
       - name: Install Dependencies
         run: |
-          pip install .
+          pip install -e .
           pip install pyinstaller
           
       - name: Build EXE
