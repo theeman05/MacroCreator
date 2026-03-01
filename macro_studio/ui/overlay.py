@@ -78,7 +78,7 @@ class TransparentOverlay(QWidget):
         self.show()
         self.setClickThrough(True)
         self.render_geometry = set()
-        self._showing_geometry = True
+        self._is_showing_geometry = True
 
         self.current_mode: CaptureMode | None = None
         self.start_pos = None
@@ -89,13 +89,13 @@ class TransparentOverlay(QWidget):
         self.cancelClicked.connect(self._finishCapture)
 
     @property
-    def showing_geometry(self):
-        return self._showing_geometry
+    def is_showing_geometry(self):
+        return self._is_showing_geometry
 
-    @showing_geometry.setter
-    def showing_geometry(self, value: bool):
-        if value != self._showing_geometry:
-            self._showing_geometry = value
+    @is_showing_geometry.setter
+    def is_showing_geometry(self, value: bool):
+        if value != self._is_showing_geometry:
+            self._is_showing_geometry = value
             self.update()
 
     def _setup_toolbar(self):
@@ -261,7 +261,7 @@ class TransparentOverlay(QWidget):
             # Show geometry when we're click-through
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
             highlighted = self._highlighted
-            if self._showing_geometry:
+            if self._is_showing_geometry:
                 painter.setPen(QPen(QColor(255, 0, 0, 180), 2))
                 for obj_conf in self.render_geometry:
                     val = obj_conf.value

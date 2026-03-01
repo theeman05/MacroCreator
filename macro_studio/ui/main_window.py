@@ -107,8 +107,8 @@ class MainWindow(QMainWindow):
 
         # Initial state stuff
         self.listener.start()
-        self._onTabChanged(0)
         self.toggleOverlay()
+        self._onTabChanged(0)
         self.stopMacroVisuals()
 
     def _connectSignals(self):
@@ -129,7 +129,6 @@ class MainWindow(QMainWindow):
 
     def _onProfileLoaded(self, is_first_load):
         self.overlay.render_geometry.clear()
-        self.overlay.showing_geometry = None
         self.overlay.update()
         if is_first_load:
             self.header.loadOnce()
@@ -225,7 +224,7 @@ class MainWindow(QMainWindow):
         self.header.updateStateVisual(state)
 
     def toggleOverlay(self):
-        self.overlay.showing_geometry = self.header.btn_overlay.isChecked()
+        self.overlay.is_showing_geometry = self.header.btn_overlay.isChecked()
 
     def _onHotkey(self, hotkey_id: str):
         if hotkey_id == "F6":
