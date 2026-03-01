@@ -21,8 +21,7 @@ jobs:
           pip install pyinstaller
           
       - name: Build EXE
-        # This assumes you have a build script or spec file
-        run: pyinstaller macro_studio.spec 
+        run: pyinstaller MacroStudio.spec
         
       - name: Upload EXE to Release
         uses: svenstaro/upload-release-action@v2
