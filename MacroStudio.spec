@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 a = Analysis(
-    ['macro_studio\\main.py'],
+    ['macro_studio/main.py'],
     pathex=["."],
     binaries=[],
     datas=[('macro_studio/assets', 'assets'), ('macro_studio/ui/templates', 'ui/templates')],
