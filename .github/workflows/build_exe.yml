@@ -25,7 +25,20 @@ jobs:
         run: |
           pip install -e .
           pip install pyinstaller
+
+      # --- DEBUG STEP ---
+      - name: Debug File Structure and Imports
+        run: |
+          echo "=== PRINTING FOLDER TREE ==="
+          tree /F macro_studio
           
+          echo "=== TESTING RAW PYTHON IMPORT ==="
+          python -c "import sys; print('Paths Python searches:', sys.path)"
+          python -c "import macro_studio; print('Found macro_studio package at:', macro_studio.__path__)"
+          python -c "import macro_studio.ui.tabs.recorder_tab; print('SUCCESS: Python can see recorder_tab!')"
+        continue-on-error: true # Prevents the workflow from immediately cancelling if the import fails
+      # ----------------------
+
       - name: Build EXE
         run: pyinstaller MacroStudio.spec
 
