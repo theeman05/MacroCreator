@@ -1,12 +1,17 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_submodules
 
+hidden_ui_tabs = collect_submodules('macro_studio.ui.tabs')
+hidden_ui_widgets = collect_submodules('macro_studio.ui.widgets')
+
+all_hidden_imports = hidden_ui_tabs + hidden_ui_widgets
 
 a = Analysis(
     ['macro_studio\\main.py'],
     pathex=[],
     binaries=[],
     datas=[('macro_studio/assets', 'assets'), ('macro_studio/ui/templates', 'ui/templates')],
-    hiddenimports=[],
+    hiddenimports=hidden_ui_tabs,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
