@@ -31,6 +31,7 @@ class TaskController:
             repeat=False,
             unique_name: str | int = None,
             is_enabled=True,
+            display_name: str | None = None, # Defaults to the function name
             task_args: tuple = (),  # Default to empty tuple
             task_kwargs: dict = None  # Default to None for mutable safety
     ):
@@ -41,6 +42,7 @@ class TaskController:
         self.state_change_by_worker = False
         self.context = self._createContext()
         self.name = unique_name or task_id
+        self.display_name = display_name or task_func.__name__
 
         self._state = TaskState.RUNNING if is_enabled else TaskState.STOPPED
         self._pause_timestamp = 0.0

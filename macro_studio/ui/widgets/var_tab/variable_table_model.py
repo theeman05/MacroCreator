@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, Union
 from PySide6.QtCore import QAbstractTableModel, Qt, QModelIndex, QTimer
-from PySide6.QtGui import QBrush, QColor
+from PySide6.QtGui import QBrush, QColor, QIcon, QPixmap, QPainter, QPen
 
 from macro_studio.core.registries.capture_type_registry import GlobalCaptureRegistry
 from macro_studio.core.registries.type_handler import GlobalTypeHandler
@@ -8,6 +8,22 @@ from macro_studio.ui.shared import EMPTY_VALUE_STR, IconColor
 
 if TYPE_CHECKING:
     from macro_studio.core.data import VariableStore, VariableConfig
+
+
+def createColorSwatch(color: QColor) -> QIcon:
+    """Creates a 16x16 icon of a solid color with a border."""
+    pixmap = QPixmap(16, 16)
+    pixmap.fill(Qt.GlobalColor.transparent)
+
+    painter = QPainter(pixmap)
+    # Draw the border
+    painter.setPen(QPen(QColor("gray"), 1))
+    # Fill with the actual QColor
+    painter.setBrush(color)
+    painter.drawRect(0, 0, 15, 15)
+    painter.end()
+
+    return QIcon(pixmap)
 
 
 # Yeah, let's consider this a widget
@@ -67,6 +83,9 @@ class VariableTableModel(QAbstractTableModel):
                 elif index.column() == 2:
                     if config.data_type is bool: return ""
                     return GlobalTypeHandler.toString(config.value) or EMPTY_VALUE_STR
+            case Qt.ItemDataRole.DecorationRole:
+                if index.column() == 2 and isinstance(config.value, QColor):
+                    return createColorSwatch(config.value)
             case Qt.ItemDataRole.EditRole:
                 if index.column() == 0:
                     return var_name

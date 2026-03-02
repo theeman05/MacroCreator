@@ -38,9 +38,23 @@ class TaskContext:
         self._controller.repeat = value
 
     @property
+    def display_name(self) -> str:
+        return self._controller.display_name
+
+    @display_name.setter
+    def display_name(self, value: str | None):
+        """Sets the display name to use for the task, defaults to the function name."""
+        self._controller.display_name = value or self._controller.func.__name__
+
+    @property
     def is_paused(self) -> bool:
         """Read-only property. Returns True if the task is currently paused or interrupted."""
         return self._controller.isPaused()
+
+    @property
+    def is_interrupted(self) -> bool:
+        """Read-only property. Returns True if the task is currently interrupted."""
+        return self._controller.isInterrupted()
 
     @property
     def is_running(self) -> bool:

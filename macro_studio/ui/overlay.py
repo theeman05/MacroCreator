@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import QWidget, QFrame, QHBoxLayout, QLabel, QPushButton
-from PySide6.QtCore import Qt, QPoint, QRect, Signal, QEventLoop
+from PySide6.QtCore import Qt, QPoint, QRect, Signal, QEventLoop, QTimer
 from PySide6.QtGui import QPainter, QPen, QColor, QKeyEvent
 from typing import TYPE_CHECKING
 
@@ -85,6 +85,8 @@ class TransparentOverlay(QWidget):
         self.selection_rect: QRect | None = None
         self._highlighted: VariableConfig | QPoint | QRect | None = None
         self._captured_data = None
+        self.current_mouse_pos = None
+        self._frozen_screen = None
 
         self.cancelClicked.connect(self._finishCapture)
 
@@ -103,11 +105,13 @@ class TransparentOverlay(QWidget):
         self.toolbar = QFrame(self)
         self.toolbar.setObjectName("OverlayToolbar")
         self.toolbar.setStyleSheet(TOOLBAR_STYLE)
+        self.toolbar.setMaximumWidth(800)
 
         layout = QHBoxLayout(self.toolbar)
         layout.setContentsMargins(5, 5, 5, 5)
 
         self.lbl_instruction = QLabel("Select Region")
+        self.lbl_instruction.setWordWrap(True)
         layout.addWidget(self.lbl_instruction)
 
         self.btn_cancel = QPushButton("X")
@@ -115,15 +119,6 @@ class TransparentOverlay(QWidget):
         layout.addWidget(self.btn_cancel)
 
         self.toolbar.hide()
-
-    def resizeEvent(self, event):
-        """Keep the toolbar centered at the top"""
-        if hasattr(self, 'toolbar'):
-            w = 300  # Width of toolbar
-            h = 50  # Height
-            x = (self.width() - w) // 2
-            self.toolbar.setGeometry(x, 20, w, h)
-        super().resizeEvent(event)
 
     def raiseToolbar(self, display_text):
         self.main_window.hide()
@@ -140,18 +135,31 @@ class TransparentOverlay(QWidget):
     def captureData(self, mode: CaptureMode, display_text=None) -> QRect | QPoint | None:
         """Shows the overlay and waits until capture is finished"""
         self.current_mode = mode
+        self.current_mouse_pos = None
+
+        self.main_window.hide()
+        self.update()
+
+        delay_loop = QEventLoop()
+        QTimer.singleShot(200, delay_loop.quit)
+        delay_loop.exec()
+
+        self._frozen_screen = self.screen().grabWindow(0)
 
         if display_text is None:
             if mode is CaptureMode.REGION:
                 display_text = "Click and drag to select a region"
             elif mode is CaptureMode.POINT:
                 display_text = "Click to set the point"
+            elif mode is CaptureMode.COLOR:
+                display_text = "Click any pixel on the screen to capture its color"
 
         self.raiseToolbar(display_text)
 
         self.setClickThrough(False)
         self.setCursor(Qt.CursorShape.CrossCursor)
-        self.update()
+
+        self.setMouseTracking(True)
 
         loop = QEventLoop()
         self.captureFinished.connect(loop.quit)
@@ -160,6 +168,7 @@ class TransparentOverlay(QWidget):
         # Finished capture when past loop.exec
         capture_data = self._captured_data
         self._captured_data = None
+        self._frozen_screen = None
 
         return capture_data
 
@@ -167,6 +176,9 @@ class TransparentOverlay(QWidget):
         if self.current_mode is None: return
         self._captured_data = capture_data
         self.start_pos = self.selection_rect = self.current_mode = None
+        self.current_mouse_pos = None
+
+        self.setMouseTracking(False)
         self.setCursor(Qt.CursorShape.ArrowCursor)
         self.update()
         self.hideToolbar()
@@ -190,9 +202,16 @@ class TransparentOverlay(QWidget):
             self.raise_()  # Bring to very front
             self.activateWindow()  # Tell OS "This is the active app"
             self.setFocus()  # Tell Qt "Send key/mouse events here"
-
-            self.setCursor(Qt.CursorShape.CrossCursor)
         self.update()
+
+    def resizeEvent(self, event):
+        """Keep the toolbar centered at the top"""
+        if hasattr(self, 'toolbar'):
+            w = 300  # Width of toolbar
+            h = 50  # Height
+            x = (self.width() - w) // 2
+            self.toolbar.setGeometry(x, 20, w, h)
+        super().resizeEvent(event)
 
     def mousePressEvent(self, event):
         if not self.current_mode:
@@ -206,12 +225,22 @@ class TransparentOverlay(QWidget):
                 self.start_pos = event.pos()
                 self.selection_rect = QRect(self.start_pos, self.start_pos)
                 self.update()
+            elif self.current_mode is CaptureMode.COLOR:
+                # Grab the exact pixel color using Qt!
+                pos = event.pos()
+                pixmap = self.screen().grabWindow(0, pos.x(), pos.y(), 1, 1)
+                color = pixmap.toImage().pixelColor(0, 0)
+                self._finishCapture(color)
 
     def mouseMoveEvent(self, event):
         if self.current_mode is CaptureMode.REGION and self.start_pos:
             # Update the drag rectangle
             self.selection_rect = QRect(self.start_pos, event.pos()).normalized()
             self.update()  # Force repaint to show the box growing
+        elif self.current_mode is CaptureMode.COLOR:
+            # Update our tracker and force the magnifier to redraw
+            self.current_mouse_pos = event.pos()
+            self.update()
 
     def mouseReleaseEvent(self, event):
         if self.current_mode is CaptureMode.REGION and self.start_pos:
@@ -229,7 +258,7 @@ class TransparentOverlay(QWidget):
         if isinstance(config_name, str):
             config = self.main_window.profile.vars.get(config_name)
             if not config: return
-            self._highlighted = config if (config and GlobalCaptureRegistry.containsType(config.data_type)) else None
+            self._highlighted = config if (config and config.data_type in (QPoint, QRect)) else None
         else:
             self._highlighted = config_name
 
@@ -241,24 +270,76 @@ class TransparentOverlay(QWidget):
             self._highlighted = None
             self.update()
 
+    def paintColorMagnifier(self, painter):
+        m_pos = self.current_mouse_pos
+
+        # 11x11 capture area, 10x zoom = 110x110 magnifier box
+        cap_size, zoom = 11, 10
+        mag_size = cap_size * zoom
+
+        # Grab the small 11x11 screen region around the mouse
+        grab_rect = QRect(m_pos.x() - cap_size // 2, m_pos.y() - cap_size // 2, cap_size, cap_size)
+        pixmap = self.screen().grabWindow(0, grab_rect.x(), grab_rect.y(), grab_rect.width(), grab_rect.height())
+
+        # Scale it up (FastTransformation keeps the sharp pixelated grid look)
+        scaled = pixmap.scaled(mag_size, mag_size, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.FastTransformation)
+
+        # Edge Handling: Default to drawing bottom-right of cursor
+        offset = 15
+        draw_x = m_pos.x() + offset
+        draw_y = m_pos.y() + offset
+
+        # If hitting the right edge of the screen, flip the box to the left side
+        if draw_x + mag_size > self.width():
+            draw_x = m_pos.x() - mag_size - offset
+        # If hitting the bottom edge, flip the box above the cursor (+30 is for the text area)
+        if draw_y + mag_size + 30 > self.height():
+            draw_y = m_pos.y() - mag_size - offset - 30
+
+        # Draw dark background border & text area
+        painter.fillRect(draw_x - 2, draw_y - 2, mag_size + 4, mag_size + 32, QColor(30, 30, 30, 220))
+
+        # Draw the magnified grid
+        painter.drawPixmap(draw_x, draw_y, scaled)
+
+        # Draw the targeting crosshair exactly in the middle block
+        center_offset = (cap_size // 2) * zoom
+        painter.setPen(QPen(QColor("red"), 2))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRect(draw_x + center_offset, draw_y + center_offset, zoom, zoom)
+
+        # Read the color from the exact center of our unscaled grab
+        color = pixmap.toImage().pixelColor(cap_size // 2, cap_size // 2)
+
+        # Draw the HEX code text below the grid
+        painter.setPen(QColor("white"))
+        painter.drawText(QRect(draw_x, draw_y + mag_size, mag_size, 30), Qt.AlignmentFlag.AlignCenter, color.name().upper())
+
     def paintEvent(self, event):
         painter = QPainter(self)
 
         highlight_pen = QPen(QColor(100, 200, 255), 2, Qt.PenStyle.SolidLine)
         highlight_brush = QColor(100, 200, 255, 30)
-        if not self._click_through:
-            # Dim the screen a bit when we are selecting
-            dim_color = QColor(0, 0, 0, 100)
-            painter.fillRect(self.rect(), dim_color)
+        if self.current_mode:
+            # Draw screenshot as our solid background
+            if self._frozen_screen:
+                painter.drawPixmap(0, 0, self._frozen_screen)
 
-            selection_rect = self.selection_rect
-            if selection_rect:
-                painter.setPen(highlight_pen)
-                painter.setBrush(highlight_brush)
-                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-                painter.drawRect(selection_rect)
+                if self.current_mode != CaptureMode.COLOR:
+                    dim_color = QColor(0, 0, 0, 100)
+                    painter.fillRect(self.rect(), dim_color)
+
+                selection_rect = self.selection_rect
+                if selection_rect:
+                    painter.setPen(highlight_pen)
+                    painter.setBrush(highlight_brush)
+                    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+                    painter.drawRect(selection_rect)
+
+                if self.current_mode is CaptureMode.COLOR and self.current_mouse_pos:
+                    self.paintColorMagnifier(painter)
         else:
-            # Show geometry when we're click-through
+            # Show geometry when we're not choosing something
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
             highlighted = self._highlighted
             if self._is_showing_geometry:

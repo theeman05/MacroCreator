@@ -3,6 +3,7 @@ import inspect
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Type
 from PySide6.QtCore import QRect, QPoint
+from PySide6.QtGui import QColor
 
 BASIC_TYPES = (int, float, str, bool, type(None))
 
@@ -152,7 +153,11 @@ def register_handler(cls=None):
 
     # HEURISTIC: Use 'duck typing' to detect if 'cls' is the Handler Class.
     # If it is a class AND has the methods we expect, it's the Handler (Direct Mode).
-    is_likely_handler = (inspect.isclass(cls) and (hasattr(cls, "toString") or hasattr(cls, "fromString")))
+    is_likely_handler = (
+        inspect.isclass(cls) and
+        hasattr(cls, "display_name") and
+        (hasattr(cls, "toString") or hasattr(cls, "fromString"))
+    )
 
     if is_likely_handler:
         # Case 1: @registerHandler (No Parens) on a class with correct methods
@@ -207,6 +212,41 @@ class QPointHandler:
         except ValueError:
             raise ValueError(f"Could not convert parts to integers: {text}")
 
+@register_handler(QColor)
+class QColorHandler:
+    display_name = "Color"
+
+    @staticmethod
+    def toString(color: QColor) -> str:
+        # Returns comma-separated RGB(A) format to stay consistent with QPoint and QRect
+        if color.alpha() < 255:
+            return f"{color.red()}, {color.green()}, {color.blue()}, {color.alpha()}"
+        return f"{color.red()}, {color.green()}, {color.blue()}"
+
+    @staticmethod
+    def fromString(text: str) -> QColor:
+        text = text.strip()
+
+        # Handle Hex format (e.g., "#FF0000") or standard color names (e.g., "red")
+        if text.startswith("#") or text.isalpha():
+            color = QColor(text)
+            if not color.isValid():
+                raise ValueError(f"Invalid color format or name: {text}")
+            return color
+
+        # Handle comma-separated RGB(A) format (e.g., "255, 0, 0" or "255, 255, 255, 128")
+        parts = [p.strip() for p in text.split(',') if p.strip()]
+
+        if len(parts) not in (3, 4):
+            raise ValueError(f"QColor requires 3 or 4 integers (r, g, b, [a]). Found {len(parts)}.")
+
+        try:
+            vals = [int(p) for p in parts]
+            if len(vals) == 3:
+                return QColor(vals[0], vals[1], vals[2])
+            return QColor(vals[0], vals[1], vals[2], vals[3])
+        except ValueError:
+            raise ValueError(f"Could not convert RGB(A) parts to integers: {text}")
 
 # --- Python type registration ---
 @register_handler(bool)

@@ -41,7 +41,7 @@ def getResourcePath(relative_path):
 
     return os.path.join(base_path, relative_path)
 
-DEFAULT_SIZE = (900, 700)
+DEFAULT_SIZE = (700, 700)
 
 class MainWindow(QMainWindow):
     start_signal = Signal()
@@ -243,7 +243,6 @@ class MainWindow(QMainWindow):
         self.overlay.destroy()
         event.accept()
 
-    # --- LOGGING (Thread Safe) ---
     def log(self, payload):
         timestamp = datetime.now().strftime("%H:%M:%S")
         message = payload
@@ -251,7 +250,6 @@ class MainWindow(QMainWindow):
             text = self._formatLogParts(payload)
             task_id = f"Task {payload.task_name}" if payload.task_name != -1 else "SYSTEM"
 
-            # Simple color mapping
             color = "#00ff00" if payload.task_name == -1 else ""
             if payload.level is LogLevel.ERROR:
                 color = "red"
@@ -277,5 +275,4 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _formatLogParts(packet: LogPacket):
-        # (Same logic as before, just compact)
         return " ".join([x.to_html() if hasattr(x, 'to_html') else str(x) for x in packet.parts])

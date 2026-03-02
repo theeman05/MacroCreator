@@ -7,8 +7,9 @@ if TYPE_CHECKING:
     from macro_studio.core.data.variable_config import VariableConfig
 
 class CaptureMode(Enum):
-    POINT = auto()      # Single click
-    REGION = auto()  # Drag selection
+    POINT = auto()      # Single Click
+    REGION = auto()     # Drag Selection
+    COLOR = auto()      # Color Selector
 
 class WorkerState(Enum):
     IDLE = auto()

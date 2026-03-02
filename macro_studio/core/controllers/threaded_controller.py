@@ -7,18 +7,8 @@ from .task_controller import TaskController, TaskState
 
 
 class ThreadedController(TaskController):
-    def __init__(
-            self,
-            manager,
-            task_func,
-            task_id: int,
-            repeat=False,
-            unique_name: str | int = None,
-            is_enabled=True,
-            task_args: tuple = (),  # Default to empty tuple
-            task_kwargs: dict = None  # Default to None for mutable safety
-    ):
-        super().__init__(manager, task_func, task_id, repeat, unique_name, is_enabled, task_args, task_kwargs)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
         self._os_thread = None
         self._resume_event = threading.Event()

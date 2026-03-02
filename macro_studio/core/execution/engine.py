@@ -1,13 +1,15 @@
 import sys
-from typing import Hashable
+from typing import TYPE_CHECKING, Hashable, Union
 
 from macro_studio.core.types_and_enums import TaskFunc, LogLevel, CaptureMode
 from macro_studio.core.data import Profile
 from macro_studio.core.utils import global_logger
 from macro_studio.ui.main_window import MainWindow
 from macro_studio.core.controllers.task_manager import TaskManager
-from macro_studio.api.task_context import TaskContext as Controller
-from macro_studio.api.thread_context import ThreadContext as ThreadedController
+
+if TYPE_CHECKING:
+    from macro_studio.api import (TaskContext as Controller,
+                                  ThreadContext as ThreadedController)
 
 
 class MacroStudio:
@@ -50,9 +52,9 @@ class MacroStudio:
             The value for a setup variable if present or None.
         """
         var_config = self._profile.vars.get(key)
-        return var_config and var_config.value or None
+        return var_config.value if var_config else None
 
-    def addBasicTask(self, task_func: TaskFunc, *args, enabled=True, repeat=False, **kwargs) -> Controller:
+    def addBasicTask(self, task_func: TaskFunc, *args, enabled=True, repeat=False, display_name: str | None = None, **kwargs) -> "Controller":
         """
         Add a basic task function to run when executing macros.
         Args:
@@ -60,13 +62,21 @@ class MacroStudio:
             args: Arguments to pass to the function.
             enabled: If the task should run upon using the global start method.
             repeat: If the controller should restart itself upon finishing.
+            display_name: The display name to use for the task, defaults to the function name.
             kwargs: Keyword arguments to pass to the function.
         Returns:
             The task controller handle.
         """
-        return self._manager.createController(task_func, enabled, repeat, args, kwargs)
+        return self._manager.createController(
+            task_func=task_func,
+            is_enabled=enabled,
+            repeat=repeat,
+            display_name=display_name,
+            task_args=args,
+            task_kwargs=kwargs
+        )
 
-    def addThreadTask(self, fun_in_thread, *args, enabled=True, repeat=False, **kwargs) -> ThreadedController:
+    def addThreadTask(self, fun_in_thread, *args, enabled=True, repeat=False, display_name: str | None = None, **kwargs) -> "ThreadedController":
         """
         Add an advanced thread function to run when executing macros.
         Args:
@@ -74,19 +84,28 @@ class MacroStudio:
             args: Arguments to pass to the function.
             enabled: If the task should run upon using the global start method.
             repeat: If the controller should restart itself upon finishing.
+            display_name: The display name to use for the task, defaults to the function name.
             kwargs: Keyword arguments to pass to the function.
         Returns:
             The thread task controller handle.
         """
-        return self._manager.createThreadController(fun_in_thread, enabled, repeat, args, kwargs)
+        return self._manager.createThreadController(
+            task_func=fun_in_thread,
+            is_enabled=enabled,
+            repeat=repeat,
+            display_name=display_name,
+            task_args=args,
+            task_kwargs=kwargs
+        )
 
-    def getController(self, name_or_id: str | int) -> Controller | None:
+    def getController(self, name_or_id: str | int) -> Union["Controller", "ThreadedController", None]:
         """
-        Returns the controller handle for the task with the given name or ID or ``None`` if not found.
+        Returns the controller handle using its strict internal ID or Recorded Name.
+        Note: Coded task ``display_name`` cannot be used for lookups.
         Args:
             name_or_id: The name or ID of the task.
         Returns:
-            The task controller handle or ``None`` if not found
+            The task or thread controller handle or ``None`` if not found
         """
         return self._manager.getController(name_or_id)
 

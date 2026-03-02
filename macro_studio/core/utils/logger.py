@@ -1,4 +1,5 @@
-from traceback import format_exc
+import sys
+from traceback import format_exc, print_exc
 from PySide6.QtCore import QObject, Signal
 
 from macro_studio.core.types_and_enums import LogLevel, LogPacket, LogErrorPacket
@@ -20,7 +21,7 @@ class _AppLogger(QObject):
 
     def logError(self, error_msg, include_trace=True, task_name: int|str= -1):
         """
-        Sends a structured error packet to the ui.
+        Sends a structured error packet to the ui and the IDE/CMD.
         Args:
             error_msg: The error message.
             include_trace: If the trace should be captured.
@@ -28,6 +29,7 @@ class _AppLogger(QObject):
         """
         trace = None
         if include_trace:
+            print_exc(file=sys.stderr)
             trace = format_exc()
 
             # Protect against the "NoneType" trap if they called it outside an except block
