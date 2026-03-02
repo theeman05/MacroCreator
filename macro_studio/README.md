@@ -13,29 +13,37 @@ Other macro recorders give you a tricycle; we are handing you the keys to a Satu
 * **Visual Task Recorder:** Create new tasks by recording your mouse and keyboard actions—no coding required.
 * **Modern UI/UX:** A sleek, dark-mode interface built with PySide6, featuring custom drag-and-drop timelines and interactive selector popups.
 
-## 📦 Installation
+## ⚙️ Prerequisites & System Requirements
 
-**Install via pip (Recommended for Developers)**
+While Macro Studio works out of the box for standard automation, utilizing the Optical Character Recognition (OCR) features in the Vision library requires a third-party OCR engine to be installed on your system.
+
+**Tesseract OCR (Required for Text Capture)**
+If you plan to use `vision.captureScreenText()` in your macros to read text from the screen, you **must** install the Tesseract C++ binary.
+
+**Windows Users:**
+1. Download the latest installer from the [UB-Mannheim Tesseract repository](https://www.google.com/search?q=https://github.com/UB-Mannheim/tesseract/wiki).
+2. Run the installer and ensure it installs to the default directory: `C:\Program Files\Tesseract-OCR\tesseract.exe`.
+3. Macro Studio will automatically detect it from this location!
+
+---
+
+## 📦 Installation Options
+
+### Option 1: Install via pip (The Intended Way)
+
 ```bash
 pip install macro-studio
 
 ```
 
-**Run via Python**
-Once installed, you can launch the studio directly from your terminal:
+### Option 2: Install Standalone Executable (Windows)
 
-```bash
-macro-studio
-
-```
-
-## 🖥️ Standalone Executable (Windows)
-
-If you prefer not to use Python environments, you can download the latest pre-compiled `.exe` from the [GitHub Releases page](https://www.google.com/search?q=https://github.com/theeman05/MacroStudio/releases).
+If you prefer not to use Python environments, you can download the latest pre-compiled `.exe` from the [GitHub Releases page](https://github.com/theeman05/MacroStudio/releases).
 
 1. Download the `MacroStudio-Win64.zip` file.
 2. Extract the ZIP folder.
 3. Double-click `MacroStudio.exe` to launch.
+4. *(Note: You still need to install Tesseract OCR separately if you plan to use text-reading features!)*
 
 ## 🔗 Links
 
