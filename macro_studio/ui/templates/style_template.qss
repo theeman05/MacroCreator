@@ -16,6 +16,11 @@ QLabel#header_label {
     font-weight: bold;
 }
 
+QLabel#subtitle_label {
+    color: $btn_border_h;
+    font-weight: bold;
+}
+
 /* --- Header Container --- */
 QFrame#BlueHeader {
     background-color: $header_bg;
@@ -313,7 +318,7 @@ TextFunctionDialog {
 }
 
 QLabel#pill_style {
-    background-color: $bg_secondary;
+    background-color: $btn_bg;
     color: $text_primary;
     border-radius: 4px;
     padding: 2px 6px;

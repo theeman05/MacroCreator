@@ -2,12 +2,11 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QCursor
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QVBoxLayout, QSizePolicy, QWidget, QGridLayout, QMenu, QMessageBox
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QVBoxLayout, QSizePolicy, QWidget, QGridLayout, QMenu
 
 from macro_studio.core.controllers.task_controller import TaskState
 from macro_studio.ui.shared import ToggleHoverButton, HoverButton, IconColor
 from macro_studio.core.controllers.threaded_controller import ThreadedController
-from macro_studio.ui.widgets.standalone.approval_event import ApprovalEvent
 
 if TYPE_CHECKING:
     from macro_studio.core.controllers.task_controller import TaskController
@@ -15,6 +14,19 @@ if TYPE_CHECKING:
 ICON_SIZE = 24
 
 from PySide6.QtWidgets import QLabel
+
+
+def isManualController(controller: "TaskController"):
+    return isinstance(controller.name, str)
+
+def getDispColorAndToolTip(controller: "TaskController"):
+    if isManualController(controller):
+        return IconColor.SELECTED, "Recorded Task"
+
+    if isinstance(controller, ThreadedController):
+        return "#7e57c2", "Threaded Task"
+
+    return IconColor.DEFAULT, "Basic Task"
 
 
 class CircularStatusLabel(QLabel):
@@ -38,29 +50,56 @@ class CircularStatusLabel(QLabel):
 
 
 class TaskRowWidget(QFrame):
-    removeRequested = Signal(object) # controller
+    removeRequested = Signal(object)  # controller
 
     def __init__(self, controller: "TaskController"):
         super().__init__()
         self.controller = controller
-        self.prev_name = None
+        self.prev_display_name = None
 
         self.setObjectName("TaskCard")
 
         # Left Zone: Identity
         self.lbl_status_dot = CircularStatusLabel()
-        self.btn_toggle = ToggleHoverButton("ph.circle-dashed-bold", "ph.circle-bold", normal_tooltip="Enable Task", checked_tooltip="Disable Task", size=28)
+        self.btn_toggle = ToggleHoverButton("ph.circle-dashed-bold", "ph.circle-bold", normal_tooltip="Enable Task",
+                                            checked_tooltip="Disable Task", size=28)
 
-        self.lbl_name = QLabel()
-        self.lbl_name.setStyleSheet("font-weight: bold; font-size: 14px;")
+        # Badge styling for the task name/ID
+        self.lbl_task_cid = QLabel(str(controller.cid))
+        self.lbl_task_cid.setObjectName("pill_style")
+        self.lbl_task_cid.setToolTip("Task ID")
+        self.lbl_task_cid.setStyleSheet(f"""
+            QLabel {{
+                padding: 3px 3px; 
+                font-size: 11px; 
+                letter-spacing: 0px;
+            }}
+        """)
+
+        disp_bg, disp_tooltip = getDispColorAndToolTip(controller)
+
+        # Prominent styling for the display name
+        self.lbl_display_name = QLabel()
+        self.lbl_display_name.setStyleSheet(f"font-weight: bold; font-size: 14px; color: {disp_bg};")
+        self.lbl_display_name.setToolTip(disp_tooltip)
+
         self.lbl_state_text = QLabel()
-        self.lbl_state_text.setStyleSheet("color: #888888; font-size: 11px;")
+        self.lbl_state_text.setObjectName("subtitle_label")
+        self.lbl_state_text.setStyleSheet("font-size: 11px;")
 
         # Right Zone: Actions
-        self.btn_loop = ToggleHoverButton("ph.repeat-bold", normal_tooltip="Enable Repeat", checked_tooltip="Disable Repeat", size=ICON_SIZE)
+        self.actions_widget = QWidget()
+
+        self.btn_loop = ToggleHoverButton("ph.repeat-bold", normal_tooltip="Enable Repeat",
+                                          checked_tooltip="Disable Repeat", size=ICON_SIZE)
         self.btn_restart = HoverButton("ph.arrow-u-up-left-bold", tooltip="Restart Task", size=ICON_SIZE)
-        self.btn_pause_resume = ToggleHoverButton("ph.pause-bold", "ph.play-bold", normal_color=IconColor.DEFAULT, hover_color=IconColor.SELECTED_HOVER, checked_color=IconColor.DEFAULT, checked_hover_color=IconColor.SELECTED_HOVER, normal_tooltip="Pause Task", checked_tooltip="Resume Task", size=ICON_SIZE)
-        self.btn_interrupt = HoverButton("mdi.alert-octagon-outline", hover_color="#F46800", tooltip="Interrupt Task", size=ICON_SIZE)
+        self.btn_pause_resume = ToggleHoverButton("ph.pause-bold", "ph.play-bold", normal_color=IconColor.DEFAULT,
+                                                  hover_color=IconColor.SELECTED_HOVER, checked_color=IconColor.DEFAULT,
+                                                  checked_hover_color=IconColor.SELECTED_HOVER,
+                                                  normal_tooltip="Pause Task", checked_tooltip="Resume Task",
+                                                  size=ICON_SIZE)
+        self.btn_interrupt = HoverButton("mdi.alert-octagon-outline", hover_color="#F46800", tooltip="Interrupt Task",
+                                         size=ICON_SIZE)
         self.btn_stop = HoverButton("ph.stop-bold", hover_color="#f44336", tooltip="Stop Task", size=ICON_SIZE)
 
         self.setupLayout()
@@ -84,24 +123,8 @@ class TaskRowWidget(QFrame):
 
         name_badge_layout = QHBoxLayout()
         name_badge_layout.setSpacing(6)
-        name_badge_layout.addWidget(self.lbl_name)
-
-        is_threaded = isinstance(self.controller, ThreadedController)
-        if is_threaded:
-            lbl_badge = QLabel("THREADED")
-            lbl_badge.setObjectName("pill_style")
-            lbl_badge.setStyleSheet("""
-                        QLabel {
-                            background-color: #3f3f3f; 
-                            color: #aaaaaa; 
-                            border-radius: 4px; 
-                            padding: 2px 6px; 
-                            font-size: 9px; 
-                            font-weight: bold;
-                            letter-spacing: 1px;
-                        }
-                    """)
-            name_badge_layout.addWidget(lbl_badge)
+        name_badge_layout.addWidget(self.lbl_task_cid)
+        name_badge_layout.addWidget(self.lbl_display_name)
 
         name_badge_layout.addStretch()
 
@@ -117,11 +140,17 @@ class TaskRowWidget(QFrame):
         main_layout.addWidget(spacer)
 
         # Right Zone Assembly
-        main_layout.addWidget(self.btn_loop)
-        main_layout.addWidget(self.btn_restart)
-        main_layout.addWidget(self.btn_pause_resume)
-        main_layout.addWidget(self.btn_interrupt)
-        main_layout.addWidget(self.btn_stop)
+        actions_layout = QHBoxLayout(self.actions_widget)
+        actions_layout.setSpacing(10)
+        actions_layout.setContentsMargins(0, 0, 0, 0)
+
+        actions_layout.addWidget(self.btn_loop)
+        actions_layout.addWidget(self.btn_restart)
+        actions_layout.addWidget(self.btn_pause_resume)
+        actions_layout.addWidget(self.btn_interrupt)
+        actions_layout.addWidget(self.btn_stop)
+
+        main_layout.addWidget(self.actions_widget)
 
     def connectSignals(self):
         self.btn_pause_resume.clicked.connect(self._onSmartPauseClicked)
@@ -141,6 +170,7 @@ class TaskRowWidget(QFrame):
     def _updateEnabled(self, is_checked: bool):
         if self.controller.isEnabled() != is_checked:
             self.controller.setEnabled(is_checked)
+            self.actions_widget.setVisible(is_checked)
 
         if is_checked:
             self.lbl_status_dot.show()
@@ -157,7 +187,7 @@ class TaskRowWidget(QFrame):
             self.controller.pause()
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.RightButton and isinstance(self.controller.name, str):
+        if event.button() == Qt.MouseButton.RightButton and isManualController(self.controller):
             self.showContextMenu()
 
     def showContextMenu(self):
@@ -213,10 +243,16 @@ class TaskRowWidget(QFrame):
 
         if is_enabled: self.lbl_status_dot.updateColor(state_color)
 
-        name = self.controller.name
-        if name != self.prev_name:
-            self.prev_name = name
-            self.lbl_name.setText("Task " + (f'"{name}"' if isinstance(name, str) else str(name)))
+        display_name = getattr(self.controller, 'display_name', None)
+
+        if display_name != self.prev_display_name:
+            self.prev_display_name = display_name
+
+            if display_name:
+                self.lbl_display_name.setText(str(display_name))
+                self.lbl_display_name.show()
+            else:
+                self.lbl_display_name.hide()
 
         self.lbl_state_text.setText(display_text)
         self.btn_loop.setChecked(self.controller.repeat)

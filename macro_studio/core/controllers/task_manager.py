@@ -14,6 +14,7 @@ from macro_studio.core.data import Profile, TaskModel
 
 if TYPE_CHECKING:
     from macro_studio.core.data.profile import TaskRelationship
+    from macro_studio.api import TaskContext, ThreadContext
 
 DEADLOCK_TIME_MS = 200
 WORKER_MONITOR_RATE_MS = 2000
@@ -25,7 +26,7 @@ class ManualTaskController(TaskController):
         self.relationship = relationship
         self._wrapper = ManualTaskWrapper(var_store, task_model)
         super().__init__(manager=manager, task_func=self._wrapper.runTask, task_id=cid, repeat=relationship.repeat,
-                         unique_name=task_model.name, is_enabled=relationship.is_enabled)
+                         unique_name=task_model.name, is_enabled=relationship.is_enabled, display_name=task_model.name)
 
     @property
     def repeat(self):
@@ -83,19 +84,26 @@ class TaskManager(QObject):
         self.loop_delay = delay
         self.worker.loop_delay = delay
 
-    def createController(self, task_func, enabled: bool, repeat: bool, task_args, task_kwargs):
+    def _createControllerOfType(self, controller_class: type, **kwargs):
+        """
+        Internal factory. Generates the ID, instantiates the passed class, registers it, and returns its context.
+        """
         c_id = self.next_cid
-        controller = TaskController(self, task_func, c_id, repeat=repeat, is_enabled=enabled,
-                                    task_args=task_args, task_kwargs=task_kwargs)
+
+        controller = controller_class(
+            self,
+            task_id=c_id,
+            **kwargs
+        )
+
         self._registerController(controller)
         return controller.context
 
-    def createThreadController(self, fun_in_thread, enabled: bool, repeat: bool, task_args, task_kwargs):
-        c_id = self.next_cid
-        controller = ThreadedController(self, fun_in_thread, c_id, repeat=repeat, is_enabled=enabled, task_args=task_args,
-                                        task_kwargs=task_kwargs)
-        self._registerController(controller)
-        return controller.context
+    def createController(self, **kwargs) -> "TaskContext":
+        return self._createControllerOfType(TaskController, **kwargs)
+
+    def createThreadController(self, **kwargs) -> "ThreadContext":
+        return self._createControllerOfType(ThreadedController, **kwargs)
 
     def getController(self, name_or_id: str | int):
         controller = self.controllers.get(name_or_id)
@@ -234,6 +242,7 @@ class TaskManager(QObject):
         if isinstance(controller, ManualTaskController):
             del self.controllers[controller.name]
             controller.name = task_model.name
+            controller.display_name = task_model.name
             self.controllers[task_model.name] = controller
         elif controller is None:
             # Assume it is not added to this profile

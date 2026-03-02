@@ -118,7 +118,7 @@ class DatabaseManager:
                                  value TEXT,
                                  data_type TEXT,
                                  hint TEXT,
-                                 FOREIGN KEY(profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+                                 FOREIGN KEY(profile_id) REFERENCES profiles(id) ON DELETE CASCADE,
                                  UNIQUE(profile_id, key)
                             )
                            """)

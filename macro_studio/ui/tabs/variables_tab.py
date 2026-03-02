@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
     QWidget,
     QHeaderView, QMenu, QStyledItemDelegate, QTableView, QLineEdit, QHBoxLayout, QGridLayout
 )
-from PySide6.QtCore import Qt, QEvent, QTimer
+from PySide6.QtCore import Qt, QEvent, QTimer, QRect, QPoint
 
 from macro_studio.core.registries.capture_type_registry import GlobalCaptureRegistry
 from macro_studio.ui.shared import HoverButton
@@ -143,7 +143,7 @@ class VariablesTab(QWidget):
 
     def _onVarChanged(self, var_name):
         config = self.model.store[var_name]
-        if GlobalCaptureRegistry.containsType(config.data_type):
+        if config.data_type in (QPoint, QRect):
             self.overlay.render_geometry.add(config)
             self.overlay.update()
         else:
