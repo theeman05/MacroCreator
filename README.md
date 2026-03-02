@@ -18,7 +18,7 @@ Manage multiple configurations with ease. Profiles allow:
 * **Quick Swapping:** Switch between different automation setups instantly without having to re-record tasks.
 
 ### 🎛️ Visual Task Manager
-![Task Manager UI](docs/assets/TaskManager.png)
+![Task Manager UI](https://raw.githubusercontent.com/theeman05/MacroStudio/master/docs/assets/TaskManager.png)
 
 The Visual Task Manager is the central orchestration hub of the studio. It provides a real-time, graphical interface for monitoring and controlling the execution flow of both coded Python tasks and manually recorded macros.
 
@@ -28,7 +28,7 @@ The Visual Task Manager is the central orchestration hub of the studio. It provi
 * **Graceful Teardown:** Built-in OS signal interception ensures that interrupting a task via the UI (or a terminal `Ctrl+C`) gracefully shuts down background threads without crashing the application.
 
 ### 🧩 Variable Management
-![Variables UI](docs/assets/VariablesTab.png) 
+![Variables UI](https://raw.githubusercontent.com/theeman05/MacroStudio/master/docs/assets/VariablesTab.png) 
 
 Define variables (Integers, Booleans, Regions, Points, etc.) that are exposed directly in the GUI. Users can tweak settings (like `click_spot` or `scan_area`) safely via the interface without ever touching your code. 
 
@@ -37,7 +37,7 @@ These values are **saved per-profile**, allowing you to maintain different confi
 The engine currently supports complex types like `QRect` (Regions), `QPoint` (Coordinates), and `QColor` (Colors) with visual screen overlays. This ensures users don't have to manually define these, but they still can if they enjoy the suffering!
 
 ### 🎥 Visual Task Recorder (No-Code)
-![Recorder UI](docs/assets/RecorderTab.png) 
+![Recorder UI](https://raw.githubusercontent.com/theeman05/MacroStudio/master/docs/assets/RecorderTab.png) 
 
 For the days you just don't feel like typing. The entry barrier is now lowered! Using the `Recorder` tab, users can:
 
