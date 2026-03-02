@@ -1,15 +1,17 @@
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import TYPE_CHECKING, TypeAlias, Callable, Generator, Tuple
+from PySide6.QtCore import QPoint, QRect
+from PySide6.QtGui import QColor
 
 if TYPE_CHECKING:
     from macro_studio.ui.overlay import TransparentOverlay
     from macro_studio.core.data.variable_config import VariableConfig
 
 class CaptureMode(Enum):
-    POINT = auto()      # Single Click
-    REGION = auto()     # Drag Selection
-    COLOR = auto()      # Color Selector
+    POINT = QPoint
+    REGION = QRect
+    COLOR = QColor
 
 class WorkerState(Enum):
     IDLE = auto()
@@ -17,12 +19,12 @@ class WorkerState(Enum):
     PAUSED = auto()
     INTERRUPTED = auto()
 
-@dataclass(frozen=True)
+@dataclass
 class CaptureTypeDef:
     mode: CaptureMode
-    type_class: type
     tip: str
     capture_method: Callable[["TransparentOverlay", "VariableConfig"], None]
+    type_class: type | None = None
 
 class LogLevel(Enum):
     ERROR = auto()

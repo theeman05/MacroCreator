@@ -1,5 +1,6 @@
 import sys
 from typing import TYPE_CHECKING, Hashable, Union
+from PySide6.QtCore import QTimer
 
 from macro_studio.core.types_and_enums import TaskFunc, LogLevel, CaptureMode
 from macro_studio.core.data import Profile
@@ -22,13 +23,13 @@ class MacroStudio:
         self.app = self.ui.app
         self.overlay = self.ui.overlay
 
+        self._init_profile_name = macro_name or "Default"
+
         # Connect Listeners
         self.ui.start_signal.connect(self.startExecution)
         self.ui.pause_signal.connect(self.pauseExecution)
         self.ui.stop_signal.connect(self.cancelExecution)
         self._manager.finished_signal.connect(lambda: self.cancelExecution(True))
-
-        self._profile.load(macro_name or "Default")
 
     def addVar(self, key: Hashable, data_type: CaptureMode | type, default_val: object=None, pick_hint: str=None):
         """
@@ -206,8 +207,16 @@ class MacroStudio:
 
         return elapsed
 
+    def _loadInitProfile(self):
+        profile_name = self._init_profile_name
+        self._init_profile_name = None
+        self._profile.load(profile_name)
+
     def launch(self):
+        if not self._init_profile_name: return
         self.ui.show()
         self.app.exit()
+
+        QTimer.singleShot(0, self._loadInitProfile)
 
         sys.exit(self.app.exec())

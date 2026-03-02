@@ -29,6 +29,7 @@ class VariableStore(QObject):
         self.db = db
         self._profile_id: int | None = None
         self._vars: dict[str, VariableConfig] = {}
+        self._pending_vars: dict[str, dict] = {} # Vars added before the db loads
 
     def add(self, key: Hashable, data_type: CaptureMode | type, default_val: object=None, pick_hint: str=None):
         """
@@ -42,6 +43,17 @@ class VariableStore(QObject):
             pick_hint: The hint to display while the variable is being picked or hovered over
         """
         key_str = VariableConfig.keyToStr(key)
+
+        # Variable added before loading, add to pending
+        if self._profile_id is None:
+            self._pending_vars[key_str] = {
+                'key': key,
+                'data_type': data_type,
+                'default_val': default_val,
+                'pick_hint': pick_hint
+            }
+            return
+
         if key_str not in self:
             config = VariableConfig(data_type, default_val, pick_hint)
             self._vars[key_str] = config
@@ -54,12 +66,12 @@ class VariableStore(QObject):
                 config.hint = pick_hint
                 has_changes = True
 
-            data_type = GlobalCaptureRegistry.get(data_type).type_class if GlobalCaptureRegistry.containsMode(data_type) else data_type
+            actual_type = GlobalCaptureRegistry.get(data_type).type_class if GlobalCaptureRegistry.containsMode(data_type) else data_type
 
             # If value types differ, or there's no value for config, overwrite the previous value and value type
-            if (data_type is not config.data_type) or (config.value is None and default_val != config.value):
+            if (actual_type is not config.data_type) or (config.value is None and default_val != config.value):
                 has_changes = True
-                config.data_type = data_type
+                config.data_type = actual_type
                 config.value = default_val
 
             if has_changes:
@@ -133,11 +145,76 @@ class VariableStore(QObject):
     def load(self, profile_id: int):
         self._profile_id = profile_id
         self._vars.clear()
+
+        # Process pending variables first and place them into memory
+        for key_str, var_data in self._pending_vars.items():
+            dt = var_data['data_type']
+            actual_type = GlobalCaptureRegistry.get(dt).type_class if GlobalCaptureRegistry.containsMode(dt) else dt
+            config = VariableConfig(actual_type, var_data['default_val'], var_data['pick_hint'])
+            self._vars[key_str] = config
+
+        db_updates = []
+        db_inserts = []
+
         with self.db.getConn() as conn:
-            rows = conn.execute("SELECT * FROM variables WHERE profile_id = ?", (profile_id,))
+            rows = conn.execute("SELECT * FROM variables WHERE profile_id = ?", (profile_id,)).fetchall()
+            db_keys = set()
+
+            # Reconcile DB variables against pending variables
             for row in rows:
-                config = VariableConfig.fromRow(row)
-                self._vars[row["key"]] = config
+                row_key = row["key"]
+                db_keys.add(row_key)
+
+                if row_key in self._vars:
+                    # Pending var also exists in DB
+                    pending_config = self._vars[row_key]
+                    db_config = VariableConfig.fromRow(row)
+
+                    if pending_config.data_type is db_config.data_type:
+                        # Types match: update the memory config to use the DB's saved value
+                        pending_config.value = db_config.value
+                    else:
+                        # Types mismatch: prepare to overwrite DB with the new pending type & value
+                        db_updates.append((
+                            pending_config.valToStr(),
+                            pending_config.data_type.__name__,
+                            pending_config.hint,
+                            profile_id,
+                            row_key
+                        ))
+                else:
+                    # Not in pending, just load directly from DB into memory
+                    self._vars[row_key] = VariableConfig.fromRow(row)
+
+            # Find pending variables that weren't in the DB at all (newly coded variables)
+            for key_str, config in self._vars.items():
+                if key_str in self._pending_vars and key_str not in db_keys:
+                    db_inserts.append((
+                        profile_id,
+                        key_str,
+                        config.valToStr(),
+                        config.data_type.__name__,
+                        config.hint
+                    ))
+
+            # Execute all batch operations at once for $O(1)$ DB latency
+            if db_updates:
+                conn.executemany("""
+                                 UPDATE variables
+                                 SET value = ?, data_type = ?, hint = ?
+                                 WHERE profile_id = ? AND key = ?
+                                 """, db_updates)
+
+            if db_inserts:
+                conn.executemany("""
+                                 INSERT INTO variables (profile_id, key, value, data_type, hint)
+                                 VALUES (?, ?, ?, ?, ?)
+                                 """, db_inserts)
+
+            conn.commit()
+
+        # Clear pending queue after flush
+        self._pending_vars.clear()
 
     def __contains__(self, item):
         return item in self._vars

@@ -124,12 +124,11 @@ class VarCreateOverlay(QWidget):
 
     def populateTypes(self):
         """Fills the dropdown with primitives and registered custom types."""
-        type_defs = GlobalCaptureRegistry.getAll()
+        capture_defs = GlobalCaptureRegistry.getDefinitions()
         capture_types = set()
 
-        for type_def in type_defs:
-            display_name = GlobalTypeHandler.getDisplayName(
-                type_def.type_class)
+        for type_def in capture_defs.values():
+            display_name = GlobalTypeHandler.getDisplayName(type_def.type_class)
             self.combo_type.addItem(display_name, type_def.type_class)
             capture_types.add(type_def.type_class)
 
