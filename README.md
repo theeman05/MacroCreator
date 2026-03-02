@@ -392,7 +392,7 @@ While Macro Studio works out of the box for standard automation, utilizing the O
 If you plan to use `vision.captureScreenText()` in your macros to read text from the screen, you **must** install the Tesseract C++ binary.
 
 **Windows Users:**
-1. Download the latest installer from the [UB-Mannheim Tesseract repository](https://www.google.com/search?q=https://github.com/UB-Mannheim/tesseract/wiki).
+1. Download the latest installer from the [Tesseract repository](https://github.com/tesseract-ocr/tessdoc).
 2. Run the installer and ensure it installs to the default directory: `C:\Program Files\Tesseract-OCR\tesseract.exe`.
 3. Macro Studio will automatically detect it from this location!
 
