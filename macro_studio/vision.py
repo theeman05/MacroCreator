@@ -1,4 +1,4 @@
-import cv2, pytesseract, mss
+import cv2, pytesseract, mss, os
 import numpy as np
 from PySide6.QtCore import QRect, QPoint
 from PIL import Image
@@ -6,7 +6,10 @@ from typing import Optional
 
 from PySide6.QtGui import QColor
 
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract'
+TESSERACT_PATH = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+
+if os.path.exists(TESSERACT_PATH):
+    pytesseract.pytesseract.tesseract_cmd = TESSERACT_PATH
 
 
 def captureScreenText(bounds: QRect) -> str:

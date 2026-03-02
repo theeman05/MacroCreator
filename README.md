@@ -22,7 +22,7 @@ Manage multiple configurations with ease. Profiles allow:
 
 The Visual Task Manager is the central orchestration hub of the studio. It provides a real-time, graphical interface for monitoring and controlling the execution flow of both coded Python tasks and manually recorded macros.
 
-#### Key Features
+#### Key Manager Features
 * **Real-Time Polling:** The UI continuously polls the background engine at 10 FPS, providing immediate visual feedback on which task is actively executing.
 * **Strict Source of Truth:** Intelligently handles state conflicts between volatile code and persistent UI. Scripted task states remain session-only to protect code integrity, while manual task configurations (`repeat` toggles) are safely serialized to your local database.
 * **Graceful Teardown:** Built-in OS signal interception ensures that interrupting a task via the UI (or a terminal `Ctrl+C`) gracefully shuts down background threads without crashing the application.
@@ -34,7 +34,7 @@ Define variables (Integers, Booleans, Regions, Points, etc.) that are exposed di
 
 These values are **saved per-profile**, allowing you to maintain different configurations for the same tasks across different environments.
 
-The engine currently supports complex types like `QRect` (Regions) and `QPoint` (Coordinates) with visual screen overlays. This ensures users don't have to blindly guess pixel coordinates—but they still can if they enjoy the suffering!
+The engine currently supports complex types like `QRect` (Regions), `QPoint` (Coordinates), and `QColor` (Colors) with visual screen overlays. This ensures users don't have to manually define these, but they still can if they enjoy the suffering!
 
 ### 🎥 Visual Task Recorder (No-Code)
 ![Recorder UI](docs/assets/RecorderTab.png) 
@@ -171,6 +171,58 @@ if __name__ == "__main__":
     studio.launch()
 
 ```
+
+---
+
+## 🛠️ Built-in Automation Libraries
+
+Macro Studio comes with specialized, thread-safe libraries for interacting with the operating system and analyzing the screen. Because not every macro requires these tools, they are kept out of the main namespace and can be imported as needed.
+
+### Actions Library (`macro_studio.actions`)
+
+The actions library provides a suite of keyboard and mouse controls specifically designed to work seamlessly with Macro Studio's generator-based `TaskWorker`. These methods use `yield` to ensure your macros remain non-blocking, interruptible, and play nicely with the UI thread.
+
+```python
+from macro_studio import taskSleep
+from macro_studio.actions import taskMouseClick, holdKey
+
+def my_farming_task(self):
+    # Click a specific coordinate and automatically release
+    yield from taskMouseClick(coords=QPoint(500, 500), button="left")
+    
+    # Safely hold a key while performing other actions
+    with holdKey('w'):
+        yield from taskSleep(2.5) # Non-blocking sleep!
+
+```
+
+**Key Methods:**
+
+* `taskMouseClick(coords, button)` / `taskHoldKey(key, duration)`: Input simulators that respect the engine's hard-pause and interrupt states.
+
+### Vision Library (`macro_studio.vision`)
+
+The vision library is the "eyes" of your task. Powered by OpenCV, Tesseract OCR, and the lightning-fast `mss` capture engine, it allows your tasks to make intelligent decisions based on screen state.
+
+```python
+from macro_studio.vision import captureScreenColor, captureScreenText
+
+def my_vision_task(self):
+    # Check if a specific pixel is pure red
+    color = captureScreenColor(QPoint(100, 100))
+    if color.red() == 255 and color.green() == 0:
+        print("Target Acquired!")
+
+    # Read text from a specific region on the screen
+    health_text = captureScreenText(QRect(10, 10, 200, 50))
+
+```
+
+**Key Methods:**
+
+* `captureScreenColor(QPoint)`: Returns a `QColor` object of the exact pixel on the screen in $O(1)$ time.
+* `captureScreenText(QRect)`: Extracts and returns text from a defined screen region using OCR.
+* `getScreenState(QRect)` / `Template Matching`: Tools for capturing regions as BGR arrays for advanced OpenCV comparisons.
 
 ---
 
@@ -327,7 +379,42 @@ The engine comes pre-configured with handlers for standard and GUI types:
 
 * **Python Primitives:** `int`, `float`, `bool`, `str`, `list`, `tuple`
 * **Qt Geometry:** `QRect` (Screen Region), `QPoint` (Coordinate)
+* **Qt Colors:** `QColor` (Color)
 * **Custom Extensions:** Add any class you want using the `@registerHandler` decorator or the type handler's `register` method.
+
+---
+
+## ⚙️ Prerequisites & System Requirements
+
+While Macro Studio works out of the box for standard automation, utilizing the Optical Character Recognition (OCR) features in the Vision library requires a third-party OCR engine to be installed on your system.
+
+**Tesseract OCR (Required for Text Capture)**
+If you plan to use `vision.captureScreenText()` in your macros to read text from the screen, you **must** install the Tesseract C++ binary.
+
+**Windows Users:**
+1. Download the latest installer from the [UB-Mannheim Tesseract repository](https://www.google.com/search?q=https://github.com/UB-Mannheim/tesseract/wiki).
+2. Run the installer and ensure it installs to the default directory: `C:\Program Files\Tesseract-OCR\tesseract.exe`.
+3. Macro Studio will automatically detect it from this location!
+
+---
+
+## 📦 Installation Options
+
+### Option 1: Install via pip (The Intended Way)
+
+```bash
+pip install macro-studio
+
+```
+
+### Option 2: Install Standalone Executable (Windows)
+
+If you prefer not to use Python environments, you can download the latest pre-compiled `.exe` from the [GitHub Releases page](https://github.com/theeman05/MacroStudio/releases).
+
+1. Download the `MacroStudio-Win64.zip` file.
+2. Extract the ZIP folder.
+3. Double-click `MacroStudio.exe` to launch.
+4. *(Note: You still need to install Tesseract OCR separately if you plan to use text-reading features!)*
 
 ---
 
