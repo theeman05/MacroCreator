@@ -30,10 +30,17 @@ class ThreadedController(TaskController):
         while polling the thread's health.
         """
         self._resume_event.set()
-        def thread_target():
+        def threadTarget():
             """The actual code running inside the OS thread."""
             try:
-                func(*final_args, **final_kwargs)
+                # Keep the original thread alive while the task is repeating
+                while True:
+                    func(*final_args, **final_kwargs)
+
+                    if not self.repeat:
+                        break
+
+                    self.waitForResume() # Wait to resume if we're paused, throws abort if controller dies
             except TaskAbortException:
                 # The user or engine intentionally stopped the task. This is normal!
                 pass
@@ -46,7 +53,7 @@ class ThreadedController(TaskController):
                 self.logError(f"{str(e)}")
 
         # Spawn the thread
-        self._os_thread = threading.Thread(target=thread_target, daemon=True)
+        self._os_thread = threading.Thread(target=threadTarget, daemon=True)
         self._os_thread.start()
         # Generator Polling Loop (Runs on the Worker Thread)
         while self._os_thread.is_alive():

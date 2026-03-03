@@ -471,7 +471,7 @@ class EditableSelectorDropdown(QWidget):
     def _connectSignals(self):
         self.popup.itemSelected.connect(self._onItemSelected)
         self.popup.renameRequested.connect(self._handlePopupRename)
-        self.popup.createRequested.connect(self._onCreateRequested)
+        self.popup.createRequested.connect(self.createRequested.emit)
         self.popup.deleteRequested.connect(self._handlePopupDeleted)
         self.popup.duplicateRequested.connect(self.duplicateRequested)
 
@@ -503,11 +503,6 @@ class EditableSelectorDropdown(QWidget):
             # If the user renamed the item that is currently selected, update the button!
             if item_id == self.current_item_id:
                 self.setCurrentItem(event.return_data)
-
-    def _onCreateRequested(self, event):
-        self.createRequested.emit(event)
-        if event.isAccepted:
-            self.setCurrentItem(event.return_data)
 
     # --- Configuration ---
 

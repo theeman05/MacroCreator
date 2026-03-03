@@ -178,6 +178,7 @@ class TaskHeaderWidget(QWidget):
         new_task = self.tasks.createTask(event.value, set_as_active=True)
         self.has_changes = False
         event.accept(new_task)
+        self.task_selector.setCurrentItem(new_task)
 
     def handleDuplicate(self, item_id: int, event: ApprovalEvent):
         if not self.confirmDiscardChanges():

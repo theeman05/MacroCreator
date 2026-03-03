@@ -111,6 +111,9 @@ class IntegratedHeader(QWidget):
 
         event.accept(new_name)
 
+        self.profile_selector.setCurrentItem(new_name)
+        self.profile.load(new_name)
+
     def _onDuplicateRequested(self, profile_name, event: "ApprovalEvent"):
         new_name = self.profile.duplicateProfile(profile_name)
         if not new_name:
