@@ -54,20 +54,27 @@ If you prefer not to use Python environments, you can download the latest pre-co
 ## Core Features
 
 ### :material-infinity: Infinite Possibilities
-
-Other macro recorders give you a tricycle; we are handing you the keys to a Saturn V rocket. If you can code it in Python, you can automate it. Import any library, use complex logic, and interact with the OS at a deep level.
+Other macro recorders give you a tricycle; we are handing you the keys to a Saturn V rocket. If you can code it in Python, you can automate it. Import any library, use complex logic, and interact with the OS at a deep level. You are not limited to "click here, wait 5 seconds." If you want your macro to query a database, hit a REST API, and then click the button, go for it.
 
 ### :material-tune: Visual Task Manager
+
+![Task Manager UI](assets/TaskManager.png)
 
 The central orchestration hub of the studio. It provides a real-time, graphical interface for monitoring and controlling the execution flow of both coded Python tasks and manually recorded macros.
 
 ### :material-folder-open: Profile & Variable Management
 
-Define variables (Integers, Booleans, Regions, Points, etc.) that are exposed directly in the GUI. Users can tweak settings safely via the interface without ever touching your code. Values are **saved per-profile**, allowing you to maintain different configurations for different environments.
+![Variables Tab UI](assets/VariablesTab.png)
+
+Define variables (Integers, Booleans, Regions, Points, etc.) that are exposed directly in the GUI. Users can tweak settings safely via the interface without ever touching your code. Values are saved per-profile, allowing you to maintain different configurations for different environments.
+
+The engine currently supports complex types like ``QRect`` (Regions), ``QPoint`` (Coordinates), and ``QColor`` (Colors) with visual screen overlays. This ensures users don't have to manually define these, but they still can if they enjoy the suffering!
 
 ### :material-camcorder: Visual Task Recorder (No-Code)
 
-Record your mouse and keyboard actions with zero coding required. You can even export your recorded sequences directly to a standalone Python script to wrap them in custom logic!
+![Recorder Tab UI](assets/RecorderTab.png)
+
+For the days you just don't feel like typing. Record your mouse and keyboard actions with zero coding required. You can even export your recorded sequences directly to a standalone Python script to wrap them in custom logic—it's the perfect way to learn the engine's API, or just save yourself 10 minutes of typing!
 
 ---
 
