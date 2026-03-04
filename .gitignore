@@ -15,3 +15,7 @@ dist/
 build/
 macro_studio.db
 testers/
+# Zensical / MkDocs artifacts
+site/
+.cache/
+.zensical/

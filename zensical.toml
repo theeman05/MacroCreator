@@ -1,0 +1,108 @@
+[project]
+site_name = "Macro Studio Documentation"
+repo_url = "https://github.com/theeman05/MacroStudio"
+site_description = "A robust automation framework bridging the gap between simple macro recorders and complex Python-based software development."
+copyright = "Macro Studio: Bridging the gap between recorders and Python development."
+
+nav = [
+  { "Home" = "index.md" },
+  { "Engine API" = "api_engine.md" },
+  { "Task Controllers" = "api_controllers.md" },
+  { "Actions Library" = "api_actions.md" },
+  { "Vision Library" = "api_vision.md" },
+  { "Registries" = "api_registries.md" },
+  { "Examples" = [
+    "examples/index.md",
+    { "Basic Example" = "examples/basic_class.md" },
+    { "Interrupted Pause" = "examples/interrupt_pause.md" },
+    { "Multithreaded Tasks" = "examples/threads.md" },
+    { "Human Benchmark" = "examples/human_benchmark.md" }
+  ]}
+]
+
+[project.theme]
+variant = "insiders"
+logo = "assets/Logo.png"
+favicon = "assets/Logo.png"
+features = [
+  "navigation.tabs",
+  "navigation.sections",
+  "navigation.indexes",
+  "toc.integrate",
+  "content.code.copy"
+]
+
+[project.extra]
+site_description = "Limitless automation, powered by Python."
+
+[[project.theme.palette]]
+scheme = "slate"
+primary = "custom"
+accent = "#1158c7"
+toggle = { icon = "material/brightness-4", name = "Switch to light mode" }
+
+[[project.theme.palette]]
+scheme = "default"
+primary = "custom"
+accent = "#1158c7"
+toggle = { icon = "material/brightness-7", name = "Switch to dark mode" }
+
+[project.plugins.search]
+
+[project.plugins.social]
+cards = true
+cards_layout_options = { background_color = "#1158c7" }
+
+[project.plugins.mkdocstrings.handlers.python]
+paths = ["."]
+
+[project.plugins.mkdocstrings.handlers.python.options]
+docstring_style = "google"
+show_root_heading = true
+show_source = false
+docstring_section_style = "table"
+show_signature_annotations = true
+members_order = "source"
+merge_init_into_class = true
+separate_signature = true
+show_category_heading = true
+show_symbol_type_toc = true
+
+# --- Social and Support Footer ---
+
+[[project.extra.social]]
+icon = "fontawesome/brands/github"
+link = "https://github.com/theeman05/MacroStudio"
+name = "Macro Studio Source Code"
+
+[[project.extra.social]]
+icon = "fontawesome/solid/mug-hot"
+link = "https://buymeacoffee.com/dbhs"
+name = "Support the project on Buy Me a Coffee"
+
+# --- Extensions ---
+
+[project.markdown_extensions.attr_list]
+[project.markdown_extensions.md_in_html]
+[project.markdown_extensions.admonition]
+[project.markdown_extensions.pymdownx.blocks.admonition]
+[project.markdown_extensions.pymdownx.blocks.caption]
+[project.markdown_extensions.pymdownx.details]
+[project.markdown_extensions.pymdownx.magiclink]
+[project.markdown_extensions.pymdownx.superfences]
+
+[project.markdown_extensions.pymdownx.highlight]
+anchor_linenums = true
+line_spans = "line"
+pygments_lang_class = true
+auto_title = true
+use_pygments = true
+linenums = true
+
+[project.markdown_extensions.pymdownx.emoji]
+emoji_index = "zensical.extensions.emoji.twemoji"
+emoji_generator = "zensical.extensions.emoji.to_svg"
+
+[project.markdown_extensions.pymdownx.snippets]
+base_path = ["."]
+check_paths = true

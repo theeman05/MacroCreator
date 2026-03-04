@@ -2,7 +2,6 @@ import cv2, pytesseract, mss, os
 import numpy as np
 from PySide6.QtCore import QRect, QPoint
 from PIL import Image
-from typing import Optional
 
 from PySide6.QtGui import QColor
 
@@ -13,6 +12,21 @@ if os.path.exists(TESSERACT_PATH):
 
 
 def captureScreenText(bounds: QRect) -> str:
+    """Captures a region of the screen and extracts text using Tesseract OCR.
+
+    This method performs a screen grab via MSS, converts the buffer to a grayscale binary image for better contrast,
+    and then processes it through the Tesseract engine.
+
+    Args:
+        bounds: The rectangular area of the screen to read from.
+
+    Returns:
+        The extracted text string, stripped of leading/trailing whitespace.
+
+    Raises:
+        FileNotFoundError: If the Tesseract OCR binary is not installed
+            at the path specified in 'pytesseract.pytesseract.tesseract_cmd'.
+    """
     region = {
         "top": bounds.top(),
         "left": bounds.left(),
@@ -33,7 +47,14 @@ def captureScreenText(bounds: QRect) -> str:
 
 
 def captureScreenColor(point: QPoint) -> QColor:
-    """Capture the QColor of a specific pixel on the screen."""
+    """Captures the QColor of a specific pixel on the screen.
+
+    Args:
+        point: The specific pixel location to read from.
+
+    Returns:
+        The QColor of the specified pixel.
+    """
     region = {
         "top": point.y(),
         "left": point.x(),
@@ -48,9 +69,16 @@ def captureScreenColor(point: QPoint) -> QColor:
 
 
 def isColorSimilar(color_a: QColor, color_b: QColor, tolerance: int = 10) -> bool:
-    """
-    Checks if two colors are within a certain Euclidean distance in RGB space.
-    Tolerance: 0 is exact, 10-20 is tight, 50+ is loose.
+    """Checks if two colors are within a certain Euclidean distance in RGB space.
+
+    Args:
+        color_a: The first color to compare (usually captured from the screen).
+        color_b: The second color to compare (usually the target variable).
+        tolerance: The maximum Euclidean distance allowed between colors.
+            0 is an exact match, 10-20 is tight, 50+ is loose.
+
+    Returns:
+        True if the distance between the two colors is <= tolerance, False otherwise.
     """
     r_diff = color_a.red() - color_b.red()
     g_diff = color_a.green() - color_b.green()
@@ -62,9 +90,18 @@ def isColorSimilar(color_a: QColor, color_b: QColor, tolerance: int = 10) -> boo
 
 
 def isColorSimilarPerceptual(color_a: QColor, color_b: QColor, tolerance: int = 10) -> bool:
-    """
-    Checks if two colors are within a certain weighted RGB space based on human perception.
+    """ Checks if two colors are within a certain weighted RGB space based on human perception.
+
     Best for distinguishing between subtle UI shades (e.g., 'Active' vs 'Inactive' buttons).
+
+    Args:
+        color_a: The first color to compare (usually captured from the screen).
+        color_b: The second color to compare (usually the target variable).
+        tolerance: The maximum Euclidean distance allowed between colors.
+            0 is an exact match, 10-20 is tight, 50+ is loose.
+
+    Returns:
+        True if the distance between the two colors is <= tolerance, False otherwise.
     """
     r_diff = color_a.red() - color_b.red()
     g_diff = color_a.green() - color_b.green()
@@ -76,24 +113,23 @@ def isColorSimilarPerceptual(color_a: QColor, color_b: QColor, tolerance: int = 
 
 
 def isBrightnessSimilar(color_a: QColor, color_b: QColor, tolerance: int = 10) -> bool:
-    """
-    Checks if the lightness/luminance of two colors are similar.
-    Best for detecting if a screen region flashes, dims, or highlights,
-    regardless of the actual color hue.
+    """Checks if the lightness/luminance of two colors are similar.
+
+    Best for detecting if a screen region flashes, dims, or highlights, regardless of the actual color hue.
+
+    Args:
+        color_a: The first color to compare (usually captured from the screen).
+        color_b: The second color to compare (usually the target variable).
+        tolerance: The maximum Euclidean distance allowed between colors.
+            0 is an exact match, 10-20 is tight, 50+ is loose.
+
+    Returns:
+        True if the distance between the two colors is <= tolerance, False otherwise.
     """
     return abs(color_a.lightness() - color_b.lightness()) <= tolerance
 
 
-def findImageCenter(template_path: str, bounds: Optional[QRect] = None, threshold=0.8) -> Optional[tuple[QPoint, float]]:
-    """
-    Finds an image template on the screen and return its absolute center coordinates.
-    Args:
-        template_path (str): Path to the template image.
-        bounds: The bounds to search for the template in. If no bounds are provided, it searches the entire primary monitor.
-        threshold: Confidence threshold to consider the result as a potential match.
-    Returns:
-        The absolute center coordinates of the found template object and the confidence score, or None if not found.
-    """
+def _sctWithOptionalBounds(bounds):
     with mss.mss() as sct:
         if bounds:
             region = {
@@ -111,7 +147,21 @@ def findImageCenter(template_path: str, bounds: Optional[QRect] = None, threshol
                 "width": monitor["width"],
                 "height": monitor["height"],
             }
-        screenshot = sct.grab(region)
+        return sct.grab(region), region
+
+
+def findImageCenter(template_path: str, bounds: QRect | None = None, threshold: float=0.8) -> tuple[QPoint, float] | None:
+    """Finds an image template on the screen and return its absolute center coordinates.
+
+    Args:
+        template_path (str): Path to the template image.
+        bounds: The bounds to search for the template in. If no bounds are provided, it searches the entire primary monitor.
+        threshold: Confidence threshold to consider the result as a potential match.
+
+    Returns:
+        The absolute center coordinates of the found template object and the confidence score, or None if not found.
+    """
+    screenshot, region = _sctWithOptionalBounds(bounds)
 
     screen_img = np.array(screenshot)[..., :3]  # BGRA to BGR
     template_img = cv2.imread(template_path, cv2.IMREAD_COLOR)
@@ -132,16 +182,16 @@ def findImageCenter(template_path: str, bounds: Optional[QRect] = None, threshol
     return None
 
 
-def getScreenState(bounds: QRect) -> np.ndarray:
-    """Capture a region and return it as a BGR numpy array for custom processing."""
-    region = {
-        "top": bounds.top(),
-        "left": bounds.left(),
-        "width": bounds.width(),
-        "height": bounds.height(),
-    }
-    with mss.mss() as sct:
-        screenshot = sct.grab(region)
+def getScreenState(bounds: QRect | None = None) -> np.ndarray:
+    """Capture a region and return it as a BGR numpy array for custom processing.
+
+    Args:
+        bounds: The region to capture. If ``None``, processes the whole screen.
+
+    Returns:
+        A BGR numpy array for custom processing.
+    """
+    screenshot, _region = _sctWithOptionalBounds(bounds)
 
     np_img = np.array(screenshot)
     return np_img[..., :3]
