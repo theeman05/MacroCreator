@@ -1,8 +1,9 @@
 import time
-from macro_studio import MacroStudio, ThreadController, TaskAbortException, TaskInterruptedException, taskSleep
+from macro_studio import MacroStudio, Controller, ThreadController, TaskAbortException, TaskInterruptedException, taskSleep
 
 
-def _taskInThread(controller: ThreadController):
+# --8<-- [start:thread_logic]
+def taskInThread(controller: ThreadController):
     """
     A simple example of a task running in its own thread.
     It demonstrates how to handle 'Interrupted Pauses' (Safety Stops) and Aborts correctly without crashing.
@@ -36,14 +37,12 @@ def _taskInThread(controller: ThreadController):
         controller.log("[Thread] STOPPED! Exiting task immediately.")
 
 class ThreadMacro:
-    def __init__(self, creator: MacroStudio):
-        self.engine = creator
+    def __init__(self, studio: MacroStudio):
+        # Add run tasks to the studio
+        self.thread_task_controller = studio.addThreadTask(taskInThread)
+        self.pauser_controller = studio.addBasicTask(self.threadHardPauser)
 
-        # Add run tasks to the creator
-        self.thread_task_controller = creator.addThreadTask(_taskInThread)
-        self.pauser_controller = creator.addBasicTask(self.threadHardPauser)
-
-    def threadHardPauser(self, controller):
+    def threadHardPauser(self, controller: Controller):
         # Let's attempt to interrupt the threaded task!
         yield from taskSleep(1)
         # After a second of running, interrupt the threaded task
@@ -53,3 +52,11 @@ class ThreadMacro:
         # After two seconds, unpause the threaded task so it can finish
         # Since we were hard paused, the remaining time from the thread's sleep was discarded and the task ends early
         self.thread_task_controller.resume()
+# --8<-- [end:thread_logic]
+
+if __name__ == "__main__":
+    studio = MacroStudio("Thread Macro")
+
+    ThreadMacro(studio)
+
+    studio.launch()

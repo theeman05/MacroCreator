@@ -1,7 +1,8 @@
 import time
-from macro_studio import Controller, taskSleep
+from macro_studio import MacroStudio, Controller, taskSleep
 
 
+# --8<-- [start:basic_logic]
 # 1. Define a standalone task function
 # This task just counts time and proves that it can be paused by someone else.
 def anotherTask(controller: Controller):
@@ -18,9 +19,7 @@ def anotherTask(controller: Controller):
 
 # 2. Define the Main Macro Class
 class BasicMacro:
-    def __init__(self, studio):
-        self.engine = studio
-
+    def __init__(self, studio: MacroStudio):
         # Register the tasks so the engine knows about them.
         # We store the controller for 'anotherTask' so we can manipulate it later.
         self.other_task_ctrl = studio.addBasicTask(anotherTask)
@@ -49,3 +48,15 @@ class BasicMacro:
         # Wait for everything to finish
         yield from taskSleep(2)
         controller.log("Manager: Sequence complete.")
+
+if __name__ == '__main__':
+    # Instantiates the studio with the profile name "Basic Macro"
+    studio = MacroStudio("Basic Macro")
+
+    # Registers tasks from our macro
+    BasicMacro(studio)
+
+    # Launches the application
+    studio.launch()
+
+# --8<-- [end:basic_logic]

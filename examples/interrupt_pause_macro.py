@@ -2,7 +2,7 @@
 Hard Pausable Macro Example
 ---------------------------
 This example demonstrates how to create a robust, long-running task class
-that correctly handles the Engine's "Hard Pause" and "Stop" signals.
+that correctly handles the Engine's "Interrupt" and "Stop" signals.
 
 Key Concepts:
 1. Persistence: Using a class allows you to store state (self.counter) easily.
@@ -12,6 +12,7 @@ Key Concepts:
 
 from macro_studio import MacroStudio, Controller, TaskInterruptedException, taskSleep, taskWaitForResume
 
+# --8<-- [start:pause_interruption_logic]
 class DatabaseUpdaterTask:
     """
     A simulated task that processes records in a loop.
@@ -78,10 +79,11 @@ class DatabaseUpdaterTask:
 
 
 # --- Engine Registration ---
-# If your engine expects a function, you can wrap the class like this:
+# Create a wrapper for our studio
 def runSafeTask(controller: Controller):
     task = DatabaseUpdaterTask()
     yield from task.run(controller)
+# --8<-- [end:pause_interruption_logic]
 
 if __name__ == '__main__':
     studio = MacroStudio("Database Updater Macro")

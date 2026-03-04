@@ -6,7 +6,7 @@ from macro_studio.vision import captureScreenColor, isColorSimilar
 CLICK_PT_ID = "click_pt"
 TARGET_COLOR_ID = "target_color"
 
-
+# --8<-- [start:humanized_reaction_logic]
 class BenchmarkScanner:
     """Constantly polls the screen to see if the target color has appeared."""
     is_target_color = False
@@ -15,7 +15,7 @@ class BenchmarkScanner:
         # Register the scanning task
         studio.addBasicTask(self.scanColor, repeat=True, display_name="Scan Target Color")
 
-        # Register the variables.
+        # Register variables.
         studio.addVar(CLICK_PT_ID, CaptureMode.POINT, pick_hint="Click the center of the benchmark area")
         studio.addVar(TARGET_COLOR_ID, CaptureMode.COLOR, default_val=QColor("#4bdb6a"), pick_hint="Pick the green screen color")
 
@@ -56,11 +56,11 @@ class ReactionBot:
         else:
             # Reset the flag when the screen turns red or blue again
             self.clicked_already = False
-
+# --8<-- [end:humanized_reaction_logic]
 
 if __name__ == "__main__":
     # 1. Initialize the engine
-    studio = MacroStudio("Human Benchmark")
+    studio = MacroStudio("Human Benchmark Macro")
 
     # 2. Instantiate our classes, linking the bot to the scanner's state
     scanner = BenchmarkScanner(studio)
