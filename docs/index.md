@@ -1,4 +1,5 @@
 ---
+icon: material/home
 hide:
   - navigation
   - toc
@@ -51,6 +52,24 @@ If you prefer not to use Python environments, you can download the latest pre-co
 
 ---
 
+## :material-television-play: See it in Action
+
+Check out the engine showcase, or the short demo reacting to the Human Benchmark in real-time.
+
+??? info "View Performance Demo (GIF)"
+    <p align="center">
+      <img src="assets/HumanBenchmark.gif" alt="Human Benchmark Demo" width="800">
+      <br>
+      <em>Macro Studio achieving a 17ms average on the Human Benchmark website.</em>
+    </p>
+
+!!! info "See the Full Showcase"
+    <p align="center">
+        :material-hand-pointing-right: **[Watch the Showcase on YouTube](https://youtu.be/p550JDNzMPk)** :material-hand-pointing-left:
+    </p>
+
+---
+
 ## Core Features
 
 ### :material-infinity: Infinite Possibilities
@@ -97,4 +116,11 @@ Contributions are welcome! Whether you are fixing bugs, adding new features, or 
 
 If you find this studio helpful and want to support its development, consider buying me a coffee! It helps keep the updates coming.
 
-<a href="https://buymeacoffee.com/dbhs" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
+!!! info "A Mission for Open-Source"
+    Macro Studio is, and always will be, 100% free. 
+    Curious about the engine's architecture and why I built it? 
+    [Read the Philosophy here.](philosophy.md)
+
+<p align="center">
+    <a href="https://buymeacoffee.com/dbhs" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
+</p>

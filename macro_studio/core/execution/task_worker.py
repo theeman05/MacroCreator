@@ -26,11 +26,11 @@ def _handleTasksOnHard(controller: "TaskController", notified_tasks: set):
 class TaskWorker(QThread):
     finished_signal = Signal()
 
-    def __init__(self, engine: "MacroStudio", loop_delay: float):
+    def __init__(self, engine: "MacroStudio", repeat_delay: float):
         super().__init__()
         self.state = WorkerState.IDLE
         self.engine = engine
-        self.loop_delay = loop_delay
+        self.repeat_delay = repeat_delay
         self.last_heartbeat = 0
 
         self._mutex = QMutex()
@@ -218,7 +218,7 @@ class TaskWorker(QThread):
                     # Controller completed all steps
                     if controller.repeat:
                         # Throttle controller by adding slight delay before restarting
-                        controller.restart(time.perf_counter() + self.loop_delay)
+                        controller.restart(time.perf_counter() + self.repeat_delay)
                     else:
                         controller.stop(state=TaskState.FINISHED)
                 except Exception as e:

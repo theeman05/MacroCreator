@@ -1,6 +1,6 @@
 import pydirectinput
 from PySide6.QtGui import QColor
-from macro_studio import MacroStudio, CaptureMode, Controller
+from macro_studio import MacroStudio, CaptureMode, Controller, taskSleep
 from macro_studio.vision import captureScreenColor, isColorSimilar
 
 CLICK_PT_ID = "click_pt"
@@ -52,7 +52,7 @@ class ReactionBot:
                 pydirectinput.leftClick(click_pt.x(), click_pt.y())
 
                 # Yield briefly to prevent double-clicking while the screen transitions
-                yield 0.1
+                yield from taskSleep(0.1)
         else:
             # Reset the flag when the screen turns red or blue again
             self.clicked_already = False

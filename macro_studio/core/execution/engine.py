@@ -51,17 +51,18 @@ class MacroStudio:
         self._manager.finished_signal.connect(lambda: self.cancelExecution(True))
 
     @property
-    def loop_delay(self) -> float:
-        """The delay (in seconds) applied between repetitions of auto-looping tasks.
+    def repeat_delay(self) -> float:
+        """The delay (in seconds) applied between repetitions of tasks.
 
         Returns:
-            The current loop delay in seconds.
+            The current repeat delay in seconds.
         """
-        return self._manager.loop_delay
+        return self._manager.repeat_delay
 
-    @loop_delay.setter
-    def loop_delay(self, delay: float):
-        self._manager.loop_delay = delay
+    @repeat_delay.setter
+    def repeat_delay(self, delay: float):
+        if delay < 0: raise ValueError(f"repeat_delay must be 0 or greater. Received: {delay}")
+        self._manager.repeat_delay = delay
 
     def addVar(self, key: Hashable, data_type: CaptureMode | type, default_val: object = None, pick_hint: str = None):
         """Adds a user-definable variable to the current profile.
@@ -221,6 +222,9 @@ class MacroStudio:
                 *   ``False``: **Freeze.** Suspends the generator execution at the exact
                     current line. No cleanup logic is triggered; held keys remain held
                     and local variables are preserved exactly as-is.
+
+        Raises:
+            ValueError: If the provided delay is a negative value.
 
         Returns:
             ``True`` if the pause command was issued successfully; ``False`` if the engine

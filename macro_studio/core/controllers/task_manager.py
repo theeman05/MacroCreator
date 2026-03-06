@@ -76,13 +76,13 @@ class TaskManager(QObject):
         self.profile.loaded.connect(self._onProfileLoaded)
 
     @property
-    def loop_delay(self):
-        return self.loop_delay
+    def repeat_delay(self):
+        return self.repeat_delay
 
-    @loop_delay.setter
-    def loop_delay(self, delay: float):
-        self.loop_delay = delay
-        self.worker.loop_delay = delay
+    @repeat_delay.setter
+    def repeat_delay(self, delay: float):
+        self.repeat_delay = delay
+        self.worker.repeat_delay = delay
 
     def _createControllerOfType(self, controller_class: type, **kwargs):
         """

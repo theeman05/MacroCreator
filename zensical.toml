@@ -17,7 +17,8 @@ nav = [
     { "Interrupted Pause" = "examples/interrupt_pause.md" },
     { "Multithreaded Tasks" = "examples/threads.md" },
     { "Human Benchmark" = "examples/human_benchmark.md" }
-  ]}
+  ]},
+  { "Philosophy: Why Free?" = "philosophy.md" }
 ]
 
 [project.theme]
