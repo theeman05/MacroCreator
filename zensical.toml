@@ -34,7 +34,9 @@ features = [
 ]
 
 [project.extra]
-site_description = "Limitless automation, powered by Python."
+social_image = "https://raw.githubusercontent.com/theeman05/MacroStudio/main/docs/assets/Logo.png"
+site_name = "Macro Studio Documentation"
+site_description = "A high-performance, open-source Python automation engine."
 
 [[project.theme.palette]]
 scheme = "slate"
