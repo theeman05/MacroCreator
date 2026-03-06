@@ -34,7 +34,7 @@ features = [
 ]
 
 [project.extra]
-social_image = "https://raw.githubusercontent.com/theeman05/MacroStudio/main/docs/assets/Logo.png"
+social_image = "https://raw.githubusercontent.com/theeman05/MacroStudio/master/docs/assets/Logo.png"
 site_name = "Macro Studio Documentation"
 site_description = "A high-performance, open-source Python automation engine."
 
