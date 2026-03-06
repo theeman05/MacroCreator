@@ -25,9 +25,11 @@ def checkHealth(controller):
             yield from taskSleep(1)
 ```
 
+### 👉 **[Watch the Showcase on YouTube](https://youtu.be/p550JDNzMPk)** 👈
+
 ![Human Benchmark Gif](https://raw.githubusercontent.com/theeman05/MacroStudio/master/docs/assets/HumanBenchmark.gif)
 
-👉 **[Watch the Showcase on YouTube](https://youtu.be/p550JDNzMPk)** 👈
+### Main Page of the UI:
 
 ![Task Manager UI](https://raw.githubusercontent.com/theeman05/MacroStudio/master/docs/assets/TaskManager.png)
 
