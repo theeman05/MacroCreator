@@ -152,6 +152,8 @@ class TaskWorker(QThread):
             active_snapshot = list(self._task_heap)
             self._task_heap.clear()  # Reset the heap
 
+            current_solo_gen = solo_controller.getGeneration()
+
             for entry in active_snapshot:
                 wake_time, cid, generation, controller = entry
 
@@ -159,8 +161,8 @@ class TaskWorker(QThread):
                     # Abort the non-solo task
                     controller.stop(state=TaskState.STOPPED)
                     self.logControllerAborted(controller)
-                else:
-                    # Put the solo task back into the heap
+                elif generation == current_solo_gen:
+                    # Put the solo task back into the heap and only keep the current gen
                     self._unsafePushController(controller, wake_time, cid, generation)
 
             # Clean the paused tasks
