@@ -1,4 +1,4 @@
-import pydirectinput, pyperclip
+import pydirectinput, pyperclip, math
 import numpy as np
 from typing import Generator, Iterator
 from contextlib import contextmanager
@@ -104,11 +104,11 @@ def mouseClick(coords: QPoint=None, button: str=MOUSE_PRIMARY) -> Iterator[None]
         yield  # Run the block inside the 'with' statement
     finally:
         if coords:
-            pydirectinput.mouseUp(x + np.random.randint(-5, 5), y + np.random.randint(-5, 5), button, tween=.05)
+            pydirectinput.mouseUp(x, y, button)
         else:
             pydirectinput.mouseUp(None, None, button)
 
-def taskMouseClick(coords: QPoint=None, button: str=MOUSE_PRIMARY) -> Iterator[float | None]:
+def taskMouseClick(coords: QPoint=None, button: str=MOUSE_PRIMARY, duration_mult: float=.1) -> Iterator[float | None]:
     """Performs a mouse click (press and release) within a task.
 
     This function presses a mouse button at the given coordinates, yields
@@ -121,13 +121,30 @@ def taskMouseClick(coords: QPoint=None, button: str=MOUSE_PRIMARY) -> Iterator[f
             If None, the current mouse position is used. Defaults to None.
         button: The mouse button to use ('left', 'right', 'middle').
             Defaults to MOUSE_PRIMARY ('left').
-
+        duration_mult: The extra duration per 2000 pixels based on the travel distance. Max delay is 2x duration mult seconds.
+            Defaults to .1
     Yields:
         float: The duration to sleep from `taskSleep`, or None from `taskWaitForResume`.
     """
     try:
+        if coords:
+            current_x, current_y = pydirectinput.position()
+            target_x, target_y = coords.x(), coords.y()
+
+            travel_distance = math.hypot(target_x - current_x, target_y - current_y)
+
+            if travel_distance > 10 and duration_mult:
+                dynamic_delay = min(duration_mult * 2, (travel_distance / 2000.0) * duration_mult)
+
+                pydirectinput.moveTo(coords.x(), coords.y(), duration=dynamic_delay / 2)
+
+                # Yield control to let the game register the UI hover state based on how far we are
+                yield from taskSleep(dynamic_delay)
+
+            # Perform the safe click at the current location
         with mouseClick(coords, button):
-            yield from taskSleep(.1)
+            yield from taskSleep(0.1)
+
     except TaskInterruptedException:
         yield from taskWaitForResume()
 
