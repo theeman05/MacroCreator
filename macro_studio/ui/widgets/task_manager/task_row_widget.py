@@ -268,7 +268,7 @@ class TaskRowWidget(QFrame):
 
                 state_color = is_solo and "#7e57c2" or "#2196f3"
             else:
-                display_text = "Awaiting Solo Termination"
+                display_text = "Suppressed by Solo Task"
 
         elif current_state == TaskState.RUNNING or current_state == TaskState.QUEUED:
             display_text = "Running"
