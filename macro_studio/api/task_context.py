@@ -159,6 +159,13 @@ class TaskContext:
         """
         return self._controller.isValid()
 
+    def isSolo(self):
+        """Checks if the task is currently solo selected.
+        Returns:
+            bool: True if the task controller is solo selected, False otherwise
+        """
+        return self._controller.isSolo()
+
     @require_active_task
     def setEnabled(self, enabled: bool):
         """Enables or disables the task.

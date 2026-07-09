@@ -1,9 +1,9 @@
-import uuid, sys, signal, ctypes, os
+import uuid, sys, signal, ctypes, os, winsound
 from datetime import datetime
 from typing import TYPE_CHECKING
 
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QLabel, QTabWidget, QDockWidget, QStatusBar,QVBoxLayout, QWidget
+    QApplication, QMainWindow, QLabel, QTabWidget, QDockWidget, QStatusBar, QVBoxLayout, QWidget, QSystemTrayIcon
 )
 from PySide6.QtGui import QCloseEvent, QFont, QIcon
 from PySide6.QtCore import Qt, Signal, QTimer
@@ -59,7 +59,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"Macro Studio v{__version__}")
         self.resize(*DEFAULT_SIZE)
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
-        self._setIcon()
+        self._setupTrayIcon()
 
         global_font = QFont("Segoe UI", 10)
         global_font.setStyleHint(QFont.StyleHint.SansSerif)
@@ -134,14 +134,22 @@ class MainWindow(QMainWindow):
             self.header.loadOnce()
         self.variables_tab.onProfileLoaded()
 
-    def _setIcon(self):
-        icon_path = getResourcePath(os.path.join("assets", "app_icon.ico"))
-        if os.path.exists(icon_path):
-            app_icon = QIcon(icon_path)
-            self.setWindowIcon(app_icon)
-            self.app.setWindowIcon(app_icon)
-        else:
-            print(f"WARNING: Icon not found at {icon_path}")
+    def _setIcon(self, icon: QIcon):
+        self.setWindowIcon(icon)
+        self.app.setWindowIcon(icon)
+
+    def _setupTrayIcon(self):
+        """Initializes the system tray icon."""
+        self.tray_icon = QSystemTrayIcon(self)
+
+        # Load your state icons
+        self.idle_icon = QIcon(getResourcePath(os.path.join("assets", "app_icon.ico")))
+        self.running_icon = QIcon(getResourcePath(os.path.join("assets", "app_icon_green.ico")))
+
+        # Set default state
+        self._setIcon(self.idle_icon)
+        self.tray_icon.setToolTip("Macro Studio - Idle")
+        self.tray_icon.show()
 
     def _handleInterrupt(self, signum, frame):
         self.stop_signal.emit()
@@ -219,9 +227,32 @@ class MainWindow(QMainWindow):
         self.runtime_widget.stopCounting()
 
     def setState(self, state: WorkerState):
+        is_different = state != self.state
         self.state = state
         self.status_label.setText(f"STATUS: {state.name}")
         self.header.updateStateVisual(state)
+
+        if is_different:
+            if self.state == WorkerState.RUNNING:
+                self._setIcon(self.running_icon)
+                self.tray_icon.setToolTip("Macro Studio - Running")
+
+                self.tray_icon.showMessage("⚡ Macro Studio", "Task sequence started.", QSystemTrayIcon.MessageIcon.Information, 1500)
+
+                winsound.MessageBeep(winsound.MB_ICONASTERISK)
+            else:
+                self._setIcon(self.idle_icon)
+                if self.state == WorkerState.IDLE:
+                    self.tray_icon.setToolTip("Macro Studio - Idle")
+                    self.tray_icon.showMessage("🛑 Macro Studio", "Task sequence stopped.",QSystemTrayIcon.MessageIcon.Information, 1500)
+
+                    winsound.MessageBeep(winsound.MB_ICONHAND)
+                elif self.state == WorkerState.PAUSED:
+                    self.tray_icon.setToolTip("Macro Studio - Paused")
+                    self.tray_icon.showMessage("⏸️ Macro Studio", "Task sequence paused.",QSystemTrayIcon.MessageIcon.Information, 1500)
+                else:
+                    self.tray_icon.setToolTip("Macro Studio - Interrupted")
+                    self.tray_icon.showMessage("❗Macro Studio", "Task sequence interrupted.", QSystemTrayIcon.MessageIcon.Information, 1500)
 
     def toggleOverlay(self):
         self.overlay.is_showing_geometry = self.header.btn_overlay.isChecked()

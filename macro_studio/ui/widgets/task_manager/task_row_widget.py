@@ -51,6 +51,7 @@ class CircularStatusLabel(QLabel):
 
 class TaskRowWidget(QFrame):
     removeRequested = Signal(object)  # controller
+    soloRequested = Signal(object) # controller
 
     def __init__(self, controller: "TaskController"):
         super().__init__()
@@ -159,6 +160,11 @@ class TaskRowWidget(QFrame):
         self.btn_stop.clicked.connect(self.controller.stop)
         self.btn_restart.clicked.connect(lambda: self.controller.restart())
         self.btn_toggle.clicked.connect(self._updateEnabled)
+        self.btn_toggle.rightClicked.connect(self._updateSoloEnabled)
+
+    def _isSoloOrNoSolo(self):
+        solo_controller = self.controller.manager.soloController
+        return solo_controller is None or solo_controller == self.controller
 
     def _updateAutoLoop(self, is_checked: bool):
         """Updates the backend controller when the user clicks the UI."""
@@ -167,10 +173,14 @@ class TaskRowWidget(QFrame):
 
         self.btn_loop.setChecked(is_checked)
 
-    def _updateEnabled(self, is_checked: bool):
+    def _updateEnabled(self, is_checked: bool, is_solo_or_no_solo: bool = True):
         if self.controller.isEnabled() != is_checked:
+            if self.controller.manager.soloController:
+                self.controller.manager.soloController = None
+                is_solo_or_no_solo = True
             self.controller.setEnabled(is_checked)
-            self.actions_widget.setVisible(is_checked)
+
+        self.actions_widget.setVisible(is_checked and is_solo_or_no_solo or self.controller.isAlive())
 
         if is_checked:
             self.lbl_status_dot.show()
@@ -178,6 +188,20 @@ class TaskRowWidget(QFrame):
             self.lbl_status_dot.hide()
 
         self.btn_toggle.setChecked(is_checked)
+
+    def _updateSoloEnabled(self, enabled: bool | None = None):
+        is_already_solo = self.controller.isSolo()
+
+        # If no explicit state is requested, flip the current state
+        target_state = enabled if enabled is not None else not is_already_solo
+
+        if target_state and not is_already_solo:
+            if not self.controller.isEnabled():
+                self._updateEnabled(True)
+            self.controller.manager.soloController = self.controller
+        elif is_already_solo:
+            # Only clear it if we are currently the active solo controller
+            self.controller.manager.soloController = None
 
     def _onSmartPauseClicked(self):
         """Handles the dynamic Pause/Resume button."""
@@ -202,6 +226,8 @@ class TaskRowWidget(QFrame):
         is_alive = self.controller.isAlive()
         is_paused = self.controller.isPaused()
         is_enabled = self.controller.isEnabled()
+        is_solo_or_no_solo = self._isSoloOrNoSolo()
+        is_solo = self.controller.isSolo()
         worker_alive = self.controller.worker.isAlive()
         worker_paused = self.controller.worker.isPaused()
         worker_running = worker_alive and not worker_paused
@@ -233,13 +259,26 @@ class TaskRowWidget(QFrame):
             display_text = "Paused" if not worker_paused else "Paused (Waiting for Engine)"
             state_color = "#FFC300"
 
-        elif not worker_running:
-            display_text = "Ready (Waiting for Engine)"
-            state_color = "#2196f3"
+        elif not worker_running or not is_alive:
+            if is_solo_or_no_solo:
+                display_text = "Ready (Waiting for Engine)"
+
+                state_color = is_solo and "#7e57c2" or "#2196f3"
+            else:
+                display_text = "Disabled"
 
         elif current_state == TaskState.RUNNING:
             display_text = "Running"
             state_color = "#4caf50"
+
+        # Bug when start (no solo)
+        # Stop
+        # Solo top
+        # Run
+        # Need to make it so when global stop, stop any running controllers
+
+        if is_solo:
+            display_text = "[Solo] " + display_text
 
         if is_enabled: self.lbl_status_dot.updateColor(state_color)
 
@@ -256,7 +295,7 @@ class TaskRowWidget(QFrame):
 
         self.lbl_state_text.setText(display_text)
         self.btn_loop.setChecked(self.controller.repeat)
-        self._updateEnabled(is_enabled)
+        self._updateEnabled(is_enabled, is_solo_or_no_solo)
         self.btn_pause_resume.setChecked(is_alive and is_paused)
 
         # Dynamic Enabling/Disabling

@@ -60,6 +60,7 @@ class TaskManager(QObject):
         self.engine = engine
         self.profile = profile
         self.controllers: dict[str | int, TaskController] = {}
+        self.soloController: TaskController | None = None
         self.next_cid = 0
         self._loop_delay = 0.001
         self.worker = self._createAndMonitorWorker()
@@ -199,7 +200,10 @@ class TaskManager(QObject):
         return True
 
     def _getEnabledControllers(self):
-        return [controller for controller in self.controllers.values() if controller.isEnabled()]
+        if not self.soloController:
+            return [controller for controller in self.controllers.values() if controller.isEnabled()]
+        else:
+            return [self.soloController]
 
     def _onProfileLoaded(self):
         stale_keys = []

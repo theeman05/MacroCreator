@@ -105,6 +105,9 @@ class TaskController:
     def isValid(self):
         return self.manager.getController(self.name) is not None
 
+    def isSolo(self):
+        return self.manager.soloController == self
+
     def _unsafeResetGenerator(self, new_state: TaskState, wake_time: float=None):
         self._generation += 1
         self._wake_time = wake_time or 0

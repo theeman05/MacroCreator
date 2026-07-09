@@ -216,7 +216,7 @@ class TaskWorker(QThread):
                         self._unsafePushController(controller, wake_time=new_wake_time, cid=cid, generation=generation)
                 except StopIteration:
                     # Controller completed all steps
-                    if controller.repeat:
+                    if controller.repeat and controller.isRunning() and (controller.manager.soloController is None or controller.isSolo()):
                         # Throttle controller by adding slight delay before restarting
                         controller.restart(time.perf_counter() + self.repeat_delay)
                     else:
