@@ -2,7 +2,8 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QCursor
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QVBoxLayout, QSizePolicy, QWidget, QGridLayout, QMenu
+from PySide6.QtWidgets import (QFrame, QHBoxLayout, QVBoxLayout, QSizePolicy, QWidget, QGridLayout, QMenu,
+                               QGraphicsOpacityEffect)
 
 from macro_studio.core.controllers.task_controller import TaskState
 from macro_studio.ui.shared import ToggleHoverButton, HoverButton, IconColor
@@ -59,6 +60,9 @@ class TaskRowWidget(QFrame):
         self.prev_display_name = None
 
         self.setObjectName("TaskCard")
+
+        self.opacity_effect = QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(self.opacity_effect)
 
         # Left Zone: Identity
         self.lbl_status_dot = CircularStatusLabel()
@@ -162,10 +166,6 @@ class TaskRowWidget(QFrame):
         self.btn_toggle.clicked.connect(self._updateEnabled)
         self.btn_toggle.rightClicked.connect(self._updateSoloEnabled)
 
-    def _isSoloOrNoSolo(self):
-        solo_controller = self.controller.manager.soloController
-        return solo_controller is None or solo_controller == self.controller
-
     def _updateAutoLoop(self, is_checked: bool):
         """Updates the backend controller when the user clicks the UI."""
         if self.controller.repeat != is_checked:
@@ -173,14 +173,17 @@ class TaskRowWidget(QFrame):
 
         self.btn_loop.setChecked(is_checked)
 
-    def _updateEnabled(self, is_checked: bool, is_solo_or_no_solo: bool = True):
+    def _updateEnabled(self, is_checked: bool, is_soloable: bool | None = None):
+        if is_soloable is None:
+            is_soloable = self.controller.isSoloable()
+
         if self.controller.isEnabled() != is_checked:
-            if self.controller.manager.soloController:
-                self.controller.manager.soloController = None
-                is_solo_or_no_solo = True
             self.controller.setEnabled(is_checked)
 
-        self.actions_widget.setVisible(is_checked and is_solo_or_no_solo or self.controller.isAlive())
+            if is_soloable:
+                self._updateSoloEnabled(False)
+
+        self.actions_widget.setVisible(is_checked and is_soloable)
 
         if is_checked:
             self.lbl_status_dot.show()
@@ -198,10 +201,10 @@ class TaskRowWidget(QFrame):
         if target_state and not is_already_solo:
             if not self.controller.isEnabled():
                 self._updateEnabled(True)
-            self.controller.manager.soloController = self.controller
+            self.controller.manager.setSoloController(self.controller)
         elif is_already_solo:
             # Only clear it if we are currently the active solo controller
-            self.controller.manager.soloController = None
+            self.controller.manager.setSoloController(None)
 
     def _onSmartPauseClicked(self):
         """Handles the dynamic Pause/Resume button."""
@@ -226,7 +229,7 @@ class TaskRowWidget(QFrame):
         is_alive = self.controller.isAlive()
         is_paused = self.controller.isPaused()
         is_enabled = self.controller.isEnabled()
-        is_solo_or_no_solo = self._isSoloOrNoSolo()
+        is_soloable = self.controller.isSoloable()
         is_solo = self.controller.isSolo()
         worker_alive = self.controller.worker.isAlive()
         worker_paused = self.controller.worker.isPaused()
@@ -260,25 +263,26 @@ class TaskRowWidget(QFrame):
             state_color = "#FFC300"
 
         elif not worker_running or not is_alive:
-            if is_solo_or_no_solo:
+            if is_soloable:
                 display_text = "Ready (Waiting for Engine)"
 
                 state_color = is_solo and "#7e57c2" or "#2196f3"
             else:
-                display_text = "Disabled"
+                display_text = "Awaiting Solo Termination"
 
-        elif current_state == TaskState.RUNNING:
+        elif current_state == TaskState.RUNNING or current_state == TaskState.QUEUED:
             display_text = "Running"
             state_color = "#4caf50"
 
-        # Bug when start (no solo)
-        # Stop
-        # Solo top
-        # Run
-        # Need to make it so when global stop, stop any running controllers
+        if not is_soloable:
+            # Dim the entire widget to 40% visibility
+            self.opacity_effect.setOpacity(0.4)
+        else:
+            # Restore to full 100% visibility
+            self.opacity_effect.setOpacity(1.0)
 
-        if is_solo:
-            display_text = "[Solo] " + display_text
+            if is_solo:
+                display_text = "[Solo] " + display_text
 
         if is_enabled: self.lbl_status_dot.updateColor(state_color)
 
@@ -295,7 +299,7 @@ class TaskRowWidget(QFrame):
 
         self.lbl_state_text.setText(display_text)
         self.btn_loop.setChecked(self.controller.repeat)
-        self._updateEnabled(is_enabled, is_solo_or_no_solo)
+        self._updateEnabled(is_enabled, is_soloable)
         self.btn_pause_resume.setChecked(is_alive and is_paused)
 
         # Dynamic Enabling/Disabling

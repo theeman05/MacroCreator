@@ -1,14 +1,15 @@
 import time, heapq
 from PySide6.QtCore import QThread, QMutex, QMutexLocker, Signal
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, List, Tuple, TypeAlias
 
 from macro_studio.core.types_and_enums import LogLevel, WorkerState
 from macro_studio.core.utils import global_logger
-from macro_studio.core.controllers.task_controller import TaskController, TaskState
+from macro_studio.core.controllers.task_controller import TaskController, TaskState, SortKey
 
 if TYPE_CHECKING:
     from macro_studio.core.execution.engine import MacroStudio
 
+HeapItem: TypeAlias = Tuple[*SortKey, TaskController]
 
 def _handleTasksOnHard(controller: "TaskController", notified_tasks: set):
     """
@@ -34,7 +35,7 @@ class TaskWorker(QThread):
         self.last_heartbeat = 0
 
         self._mutex = QMutex()
-        self._task_heap = []
+        self._task_heap: List[HeapItem] = []
         self._paused_tasks: set[TaskController] = set()
         self._pause_timestamp = 0.0
 
@@ -141,6 +142,36 @@ class TaskWorker(QThread):
             if controller.isAlive():
                 controller.stop(by_worker=True)
 
+    def enforceSoloLock(self, solo_controller: "TaskController"):
+        """
+        Safely stops all other active or paused tasks in the worker
+        when a solo lock is applied.
+        """
+        with QMutexLocker(self._mutex):
+            # Clean the active heap
+            active_snapshot = list(self._task_heap)
+            self._task_heap.clear()  # Reset the heap
+
+            for entry in active_snapshot:
+                wake_time, cid, generation, controller = entry
+
+                if controller != solo_controller:
+                    # Abort the non-solo task
+                    controller.stop(state=TaskState.STOPPED)
+                    self.logControllerAborted(controller)
+                else:
+                    # Put the solo task back into the heap
+                    self._unsafePushController(controller, wake_time, cid, generation)
+
+            # Clean the paused tasks
+            paused_snapshot = list(self._paused_tasks)
+
+            for controller in paused_snapshot:
+                if controller != solo_controller:
+                    self._paused_tasks.remove(controller)
+                    controller.stop(state=TaskState.STOPPED)
+                    self.logControllerAborted(controller)
+
     def _onRunEnd(self):
         # Handle when run loop ends
         if self.isInterrupted():
@@ -180,7 +211,7 @@ class TaskWorker(QThread):
                         delay_sec = wake_time - current_time
                         delay_ms = int(max(1, min(delay_sec * 1000, 50)))
                 elif self._paused_tasks:
-                    # Garbage Collection: Find tasks that were STOPPED by the user while paused
+                    # Garbage Collection: Find tasks that were unpaused by the user while paused
                     dead_tasks = [c for c in self._paused_tasks if not c.isPaused()]
 
                     for dead_task in dead_tasks:
@@ -204,6 +235,14 @@ class TaskWorker(QThread):
                 break
 
             if not should_sleep:
+                if not self.isAlive():
+                    break
+
+                if not controller.isSoloable():
+                    controller.stop(state=TaskState.STOPPED)
+                    self.logControllerAborted(controller)
+                    continue
+
                 try:
                     # Run the task using next
                     wait_duration = next(controller)
@@ -216,9 +255,11 @@ class TaskWorker(QThread):
                         self._unsafePushController(controller, wake_time=new_wake_time, cid=cid, generation=generation)
                 except StopIteration:
                     # Controller completed all steps
-                    if controller.repeat and controller.isRunning() and (controller.manager.soloController is None or controller.isSolo()):
+                    if not self.isAlive():
+                        controller.stop(state=TaskState.IDLE)
+                    elif controller.repeat and controller.isEnabled() and controller.isSoloable():
                         # Throttle controller by adding slight delay before restarting
-                        controller.restart(time.perf_counter() + self.repeat_delay)
+                        self.moveToActiveAndReschedule(controller, controller.resetGeneratorAndGetSortKey(wake_time=time.perf_counter() + self.repeat_delay))
                     else:
                         controller.stop(state=TaskState.FINISHED)
                 except Exception as e:
