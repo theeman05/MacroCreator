@@ -1,16 +1,51 @@
-import pydirectinput
+import pydirectinput, re
 from typing import TYPE_CHECKING
 from PySide6.QtCore import QPoint
+from PySide6.QtGui import QColor
 
 from macro_studio.core.types_and_enums import TaskInterruptedException
 from macro_studio.core.recording.input_translator import DirectInputTranslator
-from macro_studio.core.recording.timeline_handler import ActionType, TimelineStep, M_FUNCTION_TO_PYDIRECTINPUT
+from macro_studio.core.recording.timeline_handler import (
+    ActionType, TimelineStep, M_FUNCTION_TO_PYDIRECTINPUT,
+    WaitCondition, ConditionType, CompareOp, TextMatch)
 from macro_studio.actions import taskSleep, taskWaitForResume, taskPasteText
 
 if TYPE_CHECKING:
     from macro_studio.core.data import VariableStore, TaskModel
 
 FORCE_YIELD_AT = 50
+DEFAULT_POLL_S = 0.25  # seconds between WAIT_UNTIL condition checks
+
+_NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
+
+def _parseNumber(text):
+    """Extract the first number from OCR text, or None if there isn't one."""
+    if not text:
+        return None
+    match = _NUM_RE.search(text)
+    if not match:
+        return None
+    num = float(match.group())
+    return int(num) if num.is_integer() else num
+
+def _coerceNumber(value):
+    """Best-effort convert a literal or variable value to a number for comparison."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return value
+    if isinstance(value, str):
+        return _parseNumber(value)
+    return None
+
+_COMPARATORS = {
+    CompareOp.EQ: lambda a, b: a == b,
+    CompareOp.NE: lambda a, b: a != b,
+    CompareOp.GT: lambda a, b: a > b,
+    CompareOp.LT: lambda a, b: a < b,
+    CompareOp.GTE: lambda a, b: a >= b,
+    CompareOp.LTE: lambda a, b: a <= b,
+}
 
 def _isPress(step):
     return step.detail == 1
@@ -116,6 +151,74 @@ class ManualTaskWrapper:
         self.step_idx = 0
         self._releasePendingInputs(release_solo=True)
 
+    # --- WAIT_UNTIL support ---
+    def _resolveVar(self, name):
+        config = self.var_store.get(name) if name else None
+        return config.value if config else None
+
+    def _resolveArea(self, cond: WaitCondition):
+        return self._resolveVar(cond.area_var) if cond.area_var else cond.area
+
+    def _resolveTarget(self, cond: WaitCondition):
+        return self._resolveVar(cond.target_var) if cond.target_var else cond.target
+
+    def _readArea(self, cond: WaitCondition, area):
+        """Read the watch area, returning a typed reading (number / str / QColor) or None."""
+        if area is None:
+            return None
+        # Lazy import: vision pulls in OpenCV/Tesseract, unneeded unless a condition
+        # actually reads the screen.
+        from macro_studio.vision import captureScreenColor, captureScreenText
+        if cond.condition_type == ConditionType.COLOR:
+            return captureScreenColor(area)
+        text = captureScreenText(area)
+        if cond.condition_type == ConditionType.NUMBER:
+            return _parseNumber(text)
+        return text
+
+    def _evaluate(self, cond: WaitCondition, reading):
+        if reading is None:
+            return False
+        if cond.condition_type == ConditionType.NUMBER:
+            target = _coerceNumber(self._resolveTarget(cond))
+            if target is None:
+                return False
+            comparator = _COMPARATORS.get(cond.operator)
+            return bool(comparator and comparator(reading, target))
+        if cond.condition_type == ConditionType.TEXT:
+            target = self._resolveTarget(cond)
+            if target is None:
+                return False
+            reading_l = reading.strip().lower()
+            target_l = str(target).strip().lower()
+            if cond.text_mode == TextMatch.EQUALS:
+                return reading_l == target_l
+            return target_l in reading_l
+        if cond.condition_type == ConditionType.COLOR:
+            target = self._resolveTarget(cond)
+            if not isinstance(target, QColor):
+                return False
+            from macro_studio.vision import isColorSimilar
+            return isColorSimilar(reading, target, cond.tolerance)
+        return False
+
+    def _maybeStore(self, cond: WaitCondition, reading):
+        if (cond.store_var and reading is not None and
+                self.var_store.get(cond.store_var) is not None):
+            self.var_store.updateValue(cond.store_var, reading)
+
+    def _runWaitUntil(self, step: TimelineStep):
+        cond = step.value
+        if not isinstance(cond, WaitCondition):
+            return
+        poll = cond.poll_interval or DEFAULT_POLL_S
+        while True:
+            reading = self._readArea(cond, self._resolveArea(cond))
+            self._maybeStore(cond, reading)
+            if self._evaluate(cond, reading):
+                return
+            yield from taskSleep(poll)
+
     def runTask(self):
         try:
             while self.step_idx < len(self.steps):
@@ -127,6 +230,8 @@ class ManualTaskWrapper:
                     yield from taskSleep(delay_time)
                 elif step.action_type == ActionType.TEXT:
                     yield from taskPasteText(step.value)
+                elif step.action_type == ActionType.WAIT_UNTIL:
+                    yield from self._runWaitUntil(step)
                 else:
                     self._processStep(step)
         except TaskInterruptedException:
