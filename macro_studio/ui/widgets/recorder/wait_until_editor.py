@@ -28,6 +28,12 @@ _AREA_TYPES = {
     ConditionType.TEXT: (QRect,),
     ConditionType.COLOR: (QPoint,),
 }
+# The type a reading produces, per condition — the store target must match it.
+_STORE_TYPES = {
+    ConditionType.NUMBER: (int, float),
+    ConditionType.TEXT: (str,),
+    ConditionType.COLOR: (QColor,),
+}
 
 _VALUE_IDX = 0
 _VAR_IDX = 1
@@ -223,7 +229,8 @@ class WaitUntilDialog(QDialog):
         self._fillVarCombo(self.num_var_combo, _NUMBER_TYPES)
         self._fillVarCombo(self.text_var_combo, (str,))
         self._fillVarCombo(self.color_var_combo, (QColor,))
-        self._fillVarCombo(self.store_var_combo, None)
+        # store_var_combo is filled per condition type in _onTypeChanged.
+        self.store_var_combo.setToolTip("Only variables matching the reading's type are shown")
 
         self._loadFrom(condition if isinstance(condition, WaitCondition) else WaitCondition())
 
@@ -249,6 +256,7 @@ class WaitUntilDialog(QDialog):
         ct = ConditionType(self.type_combo.currentData())
         self.cmp_stack.setCurrentIndex(self._cmp_index[ct])
         self._fillVarCombo(self.area_var_combo, _AREA_TYPES[ct])
+        self._fillVarCombo(self.store_var_combo, _STORE_TYPES[ct])
 
     def _captureWithOverlay(self, mode):
         """Hide the dialog, run the capture overlay, then restore the dialog."""
