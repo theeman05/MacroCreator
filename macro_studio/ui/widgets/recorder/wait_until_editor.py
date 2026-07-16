@@ -178,9 +178,13 @@ class WaitUntilDialog(QDialog):
         color_lay.addWidget(self.color_target_mode)
         color_lay.addWidget(self.color_target_stack, 1)
 
-        self.cmp_stack.addWidget(num_page)    # index matches ConditionType order
-        self.cmp_stack.addWidget(color_page)
-        self.cmp_stack.addWidget(text_page)
+        # Map condition type -> its comparison page explicitly, so the pages don't
+        # depend on ConditionType enum ordering.
+        self._cmp_index = {
+            ConditionType.NUMBER: self.cmp_stack.addWidget(num_page),
+            ConditionType.COLOR: self.cmp_stack.addWidget(color_page),
+            ConditionType.TEXT: self.cmp_stack.addWidget(text_page),
+        }
         form.addRow("Reading", self.cmp_stack)
 
         # --- Store reading ---
@@ -241,7 +245,7 @@ class WaitUntilDialog(QDialog):
 
     def _onTypeChanged(self):
         ct = self.type_combo.currentData()
-        self.cmp_stack.setCurrentIndex(self.type_combo.currentIndex())
+        self.cmp_stack.setCurrentIndex(self._cmp_index[ct])
         self._fillVarCombo(self.area_var_combo, _AREA_TYPES[ct])
 
     def _drawArea(self):
