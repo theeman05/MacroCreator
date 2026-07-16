@@ -12,6 +12,7 @@ from .recorder_main import (createIconLabel, HoverButton, createQtIcon, TRASH_IC
                             IconColor, DragPreviewWidget)
 from .action_bindings import KeyCaptureEditor, SneakyDbSpinBox, SneakyTextEditor
 from .combo_line_editor import DualMouseEditor
+from .wait_until_editor import WaitUntilEditor
 from macro_studio.ui.widgets.standalone.empty_state_widget import EmptyStateWidget
 
 if TYPE_CHECKING:
@@ -22,12 +23,13 @@ ACTION_BINDINGS = {
     ActionType.MOUSE: DualMouseEditor,
     ActionType.DELAY: SneakyDbSpinBox,
     ActionType.TEXT: SneakyTextEditor,
+    ActionType.WAIT_UNTIL: WaitUntilEditor,
 }
 
 
 class TimelineItemWidget(QWidget):
     """The complex row in the RIGHT timeline."""
-    def __init__(self, overlay, mouse_combo_model, data: TimelineStep):
+    def __init__(self, overlay, mouse_combo_model, data: TimelineStep, var_store=None):
         super().__init__()
         action_type = data.action_type
 
@@ -52,10 +54,12 @@ class TimelineItemWidget(QWidget):
 
         # Text Logic
         binding = ACTION_BINDINGS.get(action_type)
-        if binding is not DualMouseEditor:
-            self.action_widget = binding(self, data.value)
-        else:
+        if binding is DualMouseEditor:
             self.action_widget = DualMouseEditor(self, data.value, overlay, mouse_combo_model)
+        elif binding is WaitUntilEditor:
+            self.action_widget = WaitUntilEditor(self, data.value, overlay, var_store)
+        else:
+            self.action_widget = binding(self, data.value)
 
         container_or_text_lbl = self.action_widget
         if detail:= data.detail:
