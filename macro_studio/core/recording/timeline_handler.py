@@ -1,8 +1,8 @@
 import bisect, json
 from dataclasses import dataclass
 from enum import Enum
-from PySide6.QtCore import QObject, Signal, QPoint
-from PySide6.QtGui import QUndoCommand
+from PySide6.QtCore import QObject, Signal, QPoint, QRect
+from PySide6.QtGui import QUndoCommand, QColor
 
 from macro_studio.core.registries.type_handler import GlobalTypeHandler
 
@@ -12,6 +12,7 @@ class ActionType(str, Enum):
     KEYBOARD = "KEYBOARD FUNCTION"
     MOUSE = "MOUSE FUNCTION"
     TEXT = "TEXT FUNCTION"
+    WAIT_UNTIL = "WAIT UNTIL"
 
 class MouseFunction(str, Enum):
     LEFT_CLICK = "Left Click"
@@ -28,6 +29,115 @@ M_FUNCTION_TO_PYDIRECTINPUT = {
     MouseFunction.SCROLL_UP.name: 1,  # Positive integers scroll up
     MouseFunction.SCROLL_DOWN.name: -1,  # Negative integers scroll down
 }
+
+class ConditionType(str, Enum):
+    NUMBER = "Number"
+    COLOR = "Color"
+    TEXT = "Text"
+
+class CompareOp(str, Enum):
+    EQ = "=="
+    NE = "!="
+    GT = ">"
+    LT = "<"
+    GTE = ">="
+    LTE = "<="
+
+class TextMatch(str, Enum):
+    CONTAINS = "contains"
+    EQUALS = "equals"
+
+# Geometry type the watch area captures for each condition (Region for OCR, Point for color).
+_COND_AREA_TYPE = {
+    ConditionType.NUMBER: QRect,
+    ConditionType.TEXT: QRect,
+    ConditionType.COLOR: QPoint,
+}
+
+DEFAULT_COLOR_TOLERANCE = 20
+
+@dataclass
+class WaitCondition:
+    """The configuration of a WAIT_UNTIL step: what to watch and what satisfies it.
+
+    Every user-facing value can be either a literal or a bound variable. A variable
+    binding lives in the matching ``*_var`` field and takes precedence over the literal;
+    this keeps a text literal distinguishable from a variable name (both are strings).
+    """
+    condition_type: ConditionType = ConditionType.NUMBER
+    area: object = None            # QRect (Number/Text) or QPoint (Color) literal
+    area_var: str | None = None    # variable name for the watch area; wins over area
+    operator: CompareOp = CompareOp.GTE   # Number comparison
+    text_mode: TextMatch = TextMatch.CONTAINS  # Text comparison
+    tolerance: int = DEFAULT_COLOR_TOLERANCE   # Color match tolerance
+    target: object = None          # number / QColor / str literal to compare against
+    target_var: str | None = None  # variable name for the target; wins over target
+    store_var: str | None = None   # variable to write each reading into (optional)
+    poll_interval: float | None = None  # seconds between checks; None => engine default
+
+    def areaType(self):
+        return _COND_AREA_TYPE[self.condition_type]
+
+    def _toDict(self):
+        data = {
+            "condition_type": self.condition_type.name,
+            "operator": self.operator.name,
+            "text_mode": self.text_mode.name,
+            "tolerance": self.tolerance,
+        }
+        if self.area_var:
+            data["area_var"] = self.area_var
+        elif self.area is not None:
+            data["area"] = GlobalTypeHandler.toString(self.area)
+
+        if self.target_var:
+            data["target_var"] = self.target_var
+        elif self.target is not None:
+            data["target"] = GlobalTypeHandler.toString(self.target)
+
+        GlobalTypeHandler.setIfEvals("store_var", self.store_var, data)
+        GlobalTypeHandler.setIfEvals("poll_interval", self.poll_interval, data)
+        return data
+
+    @staticmethod
+    def fromDict(data: dict) -> "WaitCondition":
+        cond = WaitCondition()
+        cond.condition_type = ConditionType[data.get("condition_type", ConditionType.NUMBER.name)]
+        cond.operator = CompareOp[data.get("operator", CompareOp.GTE.name)]
+        cond.text_mode = TextMatch[data.get("text_mode", TextMatch.CONTAINS.name)]
+        cond.tolerance = data.get("tolerance", DEFAULT_COLOR_TOLERANCE)
+        cond.store_var = data.get("store_var")
+        cond.poll_interval = data.get("poll_interval")
+
+        cond.area_var = data.get("area_var")
+        area_str = data.get("area")
+        if area_str is not None:
+            try:
+                cond.area = GlobalTypeHandler.fromString(cond.areaType(), area_str)
+            except (ValueError, TypeError):
+                cond.area = None
+
+        cond.target_var = data.get("target_var")
+        target_str = data.get("target")
+        if target_str is not None:
+            cond.target = WaitCondition._parseTarget(cond.condition_type, target_str)
+        return cond
+
+    @staticmethod
+    def _parseTarget(condition_type: "ConditionType", target_str: str):
+        if condition_type == ConditionType.COLOR:
+            try:
+                return GlobalTypeHandler.fromString(QColor, target_str)
+            except (ValueError, TypeError):
+                return None
+        if condition_type == ConditionType.NUMBER:
+            try:
+                num = float(target_str)
+                return int(num) if num.is_integer() else num
+            except (ValueError, TypeError):
+                return None
+        return target_str  # TEXT literal is stored verbatim
+
 
 @dataclass(eq=False)
 class TimelineStep:
@@ -49,6 +159,8 @@ class TimelineStep:
 
     def _getSerialValue(self):
         # Yeah, this isn't a great way to do it, but oh well.
+        if isinstance(self.value, WaitCondition):
+            return self.value._toDict()
         if self.value and isinstance(self.value, tuple):
             return self.value[0], GlobalTypeHandler.toString(self.value[1])
         return self.value
@@ -58,6 +170,8 @@ class TimelineStep:
         step_data = json.loads(json_str)
         step = TimelineStep(**step_data)
         step.action_type = ActionType[step_data['action_type']]
+        if step.action_type == ActionType.WAIT_UNTIL:
+            step.value = WaitCondition.fromDict(step.value) if isinstance(step.value, dict) else WaitCondition()
         if step.action_type == ActionType.MOUSE:
             m_btn = m_pos = None
             if step.value is not None:

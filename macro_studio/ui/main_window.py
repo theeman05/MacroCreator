@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QLabel, QTabWidget, QDockWidget, QStatusBar, QVBoxLayout, QWidget, QSystemTrayIcon
 )
 from PySide6.QtGui import QCloseEvent, QFont, QIcon
-from PySide6.QtCore import Qt, Signal, QTimer, QSettings
+from PySide6.QtCore import Qt, Signal, QTimer, QSettings, , QEvent
 from pynput import keyboard
 
 from macro_studio.core.types_and_enums import LogPacket, LogLevel, LogErrorPacket, WorkerState
@@ -286,6 +286,14 @@ class MainWindow(QMainWindow):
         elif hotkey_id == "F10":
             self.stop_signal.emit()
             self.stopMacroVisuals()
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        # This window and the overlay are both always-on-top; activating this window
+        # would otherwise cover the overlay, hiding its geometry/highlight painting.
+        # Re-raise the overlay above it whenever this window becomes active.
+        if event.type() == QEvent.Type.ActivationChange and self.isActiveWindow():
+            self.overlay.raise_()
 
     def closeEvent(self, event: QCloseEvent):
         self._writeGlobalSettings()

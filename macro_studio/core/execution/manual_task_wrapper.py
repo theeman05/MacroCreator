@@ -1,16 +1,116 @@
-import pydirectinput
+import pydirectinput, re
 from typing import TYPE_CHECKING
-from PySide6.QtCore import QPoint
+from PySide6.QtCore import QPoint, QRect
+from PySide6.QtGui import QColor
 
 from macro_studio.core.types_and_enums import TaskInterruptedException
 from macro_studio.core.recording.input_translator import DirectInputTranslator
-from macro_studio.core.recording.timeline_handler import ActionType, TimelineStep, M_FUNCTION_TO_PYDIRECTINPUT
+from macro_studio.core.recording.timeline_handler import (
+    ActionType, TimelineStep, M_FUNCTION_TO_PYDIRECTINPUT,
+    WaitCondition, ConditionType, CompareOp, TextMatch)
 from macro_studio.actions import taskSleep, taskWaitForResume, taskPasteText
 
 if TYPE_CHECKING:
     from macro_studio.core.data import VariableStore, TaskModel
 
 FORCE_YIELD_AT = 50
+DEFAULT_POLL_S = 0.25  # seconds between WAIT_UNTIL condition checks
+
+_NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
+
+def _parseNumber(text):
+    """Extract the first number from OCR text, or None if there isn't one."""
+    if not text:
+        return None
+    match = _NUM_RE.search(text)
+    if not match:
+        return None
+    num = float(match.group())
+    return int(num) if num.is_integer() else num
+
+def _coerceNumber(value):
+    """Best-effort convert a literal or variable value to a number for comparison."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return value
+    if isinstance(value, str):
+        return _parseNumber(value)
+    return None
+
+_COMPARATORS = {
+    CompareOp.EQ: lambda a, b: a == b,
+    CompareOp.NE: lambda a, b: a != b,
+    CompareOp.GT: lambda a, b: a > b,
+    CompareOp.LT: lambda a, b: a < b,
+    CompareOp.GTE: lambda a, b: a >= b,
+    CompareOp.LTE: lambda a, b: a <= b,
+}
+
+def _qtLiteralExpr(value):
+    """Source text that reconstructs a QRect/QPoint/QColor literal for exported code."""
+    if isinstance(value, QRect):
+        return f"QRect({value.x()}, {value.y()}, {value.width()}, {value.height()})"
+    if isinstance(value, QPoint):
+        return f"QPoint({value.x()}, {value.y()})"
+    if isinstance(value, QColor):
+        return f"QColor({value.red()}, {value.green()}, {value.blue()})"
+    return repr(value)
+
+def _waitConditionExport(cond: WaitCondition):
+    """Build (body_lines, import_lines) replicating a WAIT_UNTIL step as exported code."""
+    imports = []
+    poll = cond.poll_interval or DEFAULT_POLL_S
+
+    if cond.area_var:
+        area_expr = f"controller.getVar({cond.area_var!r})"
+    else:
+        area_expr = _qtLiteralExpr(cond.area)
+        if isinstance(cond.area, QRect):
+            imports.append("from PySide6.QtCore import QRect")
+        elif isinstance(cond.area, QPoint):
+            imports.append("from PySide6.QtCore import QPoint")
+
+    lines = []
+    if cond.condition_type == ConditionType.NUMBER:
+        imports += ["import re", "from macro_studio.vision import captureScreenText"]
+        target_expr = f"controller.getVar({cond.target_var!r})" if cond.target_var else repr(cond.target)
+        lines += [
+            "    while True:",
+            f'        _m = re.search(r"-?\\d+(?:\\.\\d+)?", captureScreenText({area_expr}))',
+            f"        if _m and float(_m.group()) {cond.operator.value} {target_expr}:",
+            "            break",
+            f"        yield from taskSleep({poll})",
+        ]
+    elif cond.condition_type == ConditionType.TEXT:
+        imports.append("from macro_studio.vision import captureScreenText")
+        target_expr = (f"str(controller.getVar({cond.target_var!r}))"
+                       if cond.target_var else repr(cond.target or ""))
+        if cond.text_mode == TextMatch.EQUALS:
+            check = f"if captureScreenText({area_expr}).strip().lower() == {target_expr}.strip().lower():"
+        else:
+            check = f"if {target_expr}.lower() in captureScreenText({area_expr}).lower():"
+        lines += ["    while True:", f"        {check}", "            break",
+                  f"        yield from taskSleep({poll})"]
+    elif cond.condition_type == ConditionType.COLOR:
+        imports.append("from macro_studio.vision import captureScreenColor, isColorSimilar")
+        if cond.target_var:
+            target_expr = f"controller.getVar({cond.target_var!r})"
+        else:
+            target_expr = _qtLiteralExpr(cond.target)
+            if isinstance(cond.target, QColor):
+                imports.append("from PySide6.QtGui import QColor")
+        lines += [
+            "    while True:",
+            f"        if isColorSimilar(captureScreenColor({area_expr}), {target_expr}, {cond.tolerance}):",
+            "            break",
+            f"        yield from taskSleep({poll})",
+        ]
+
+    if cond.store_var:
+        lines.insert(0, f"    # Reading was also stored into variable {cond.store_var!r} in the recorder.")
+
+    return lines, imports
 
 def _isPress(step):
     return step.detail == 1
@@ -116,6 +216,77 @@ class ManualTaskWrapper:
         self.step_idx = 0
         self._releasePendingInputs(release_solo=True)
 
+    # --- WAIT_UNTIL support ---
+    def _resolveVar(self, name):
+        config = self.var_store.get(name) if name else None
+        return config.value if config else None
+
+    def _resolveArea(self, cond: WaitCondition):
+        return self._resolveVar(cond.area_var) if cond.area_var else cond.area
+
+    def _resolveTarget(self, cond: WaitCondition):
+        return self._resolveVar(cond.target_var) if cond.target_var else cond.target
+
+    def _readArea(self, cond: WaitCondition, area):
+        """Read the watch area, returning a typed reading (number / str / QColor) or None."""
+        if area is None:
+            return None
+        # Lazy import: vision pulls in OpenCV/Tesseract, unneeded unless a condition
+        # actually reads the screen.
+        from macro_studio.vision import captureScreenColor, captureScreenText
+        if cond.condition_type == ConditionType.COLOR:
+            return captureScreenColor(area)
+        text = captureScreenText(area)
+        if cond.condition_type == ConditionType.NUMBER:
+            return _parseNumber(text)
+        return text
+
+    def _evaluate(self, cond: WaitCondition, reading):
+        if reading is None:
+            return False
+        if cond.condition_type == ConditionType.NUMBER:
+            target = _coerceNumber(self._resolveTarget(cond))
+            if target is None:
+                return False
+            comparator = _COMPARATORS.get(cond.operator)
+            return bool(comparator and comparator(reading, target))
+        if cond.condition_type == ConditionType.TEXT:
+            target = self._resolveTarget(cond)
+            if target is None:
+                return False
+            reading_l = reading.strip().lower()
+            target_l = str(target).strip().lower()
+            if cond.text_mode == TextMatch.EQUALS:
+                return reading_l == target_l
+            return target_l in reading_l
+        if cond.condition_type == ConditionType.COLOR:
+            target = self._resolveTarget(cond)
+            if not isinstance(target, QColor):
+                return False
+            from macro_studio.vision import isColorSimilar
+            return isColorSimilar(reading, target, cond.tolerance)
+        return False
+
+    def _maybeStore(self, cond: WaitCondition, reading):
+        if (cond.store_var and reading is not None and
+                self.var_store.get(cond.store_var) is not None):
+            self.var_store.updateValue(cond.store_var, reading)
+
+    def _runWaitUntil(self, step: TimelineStep):
+        cond = step.value
+        if not isinstance(cond, WaitCondition):
+            return
+        poll = cond.poll_interval or DEFAULT_POLL_S
+        last_stored = object()  # sentinel: the first real reading always writes
+        while True:
+            reading = self._readArea(cond, self._resolveArea(cond))
+            if reading is not None and reading != last_stored:
+                self._maybeStore(cond, reading)
+                last_stored = reading
+            if self._evaluate(cond, reading):
+                return
+            yield from taskSleep(poll)
+
     def runTask(self):
         try:
             while self.step_idx < len(self.steps):
@@ -127,6 +298,8 @@ class ManualTaskWrapper:
                     yield from taskSleep(delay_time)
                 elif step.action_type == ActionType.TEXT:
                     yield from taskPasteText(step.value)
+                elif step.action_type == ActionType.WAIT_UNTIL:
+                    yield from self._runWaitUntil(step)
                 else:
                     self._processStep(step)
         except TaskInterruptedException:
@@ -145,6 +318,7 @@ class ManualTaskWrapper:
 
         body_lines = []
         vars_to_fetch = set()
+        extra_imports = []
 
         for step in self.steps:
             if step.action_type == ActionType.DELAY:
@@ -152,6 +326,13 @@ class ManualTaskWrapper:
 
             elif step.action_type == ActionType.TEXT:
                 body_lines.append(f"    yield from pasteText({repr(step.value)})")
+
+            elif step.action_type == ActionType.WAIT_UNTIL and isinstance(step.value, WaitCondition):
+                wu_lines, wu_imports = _waitConditionExport(step.value)
+                body_lines.extend(wu_lines)
+                for imp in wu_imports:
+                    if imp not in extra_imports:
+                        extra_imports.append(imp)
 
             elif step.action_type == ActionType.KEYBOARD:
                 key = step.value
@@ -188,6 +369,10 @@ class ManualTaskWrapper:
 
         if not body_lines:
             body_lines.append("    pass")
+
+        # Splice any WAIT_UNTIL imports into the header, above the blank line and def.
+        if extra_imports:
+            lines[2:2] = extra_imports
 
         lines.extend(body_lines)
         return "\n".join(lines)
