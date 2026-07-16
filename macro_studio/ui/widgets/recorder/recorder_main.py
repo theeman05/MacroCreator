@@ -20,10 +20,11 @@ class ActionConfig:
     pairable: bool = False
 
 ACTION_TYPES = {
-    ActionType.DELAY:    ActionConfig(color="#A6A6A6", icon_name="ph.clock"),
-    ActionType.KEYBOARD: ActionConfig(color="#4CAF50", icon_name="fa5.keyboard", pairable=True),
-    ActionType.MOUSE:    ActionConfig(color="#FF9800", icon_name="ph.mouse", pairable=True),
-    ActionType.TEXT:     ActionConfig(color="#2196F3", icon_name="ph.text-align-left"),
+    ActionType.DELAY:      ActionConfig(color="#A6A6A6", icon_name="ph.clock"),
+    ActionType.KEYBOARD:   ActionConfig(color="#4CAF50", icon_name="fa5.keyboard", pairable=True),
+    ActionType.MOUSE:      ActionConfig(color="#FF9800", icon_name="ph.mouse", pairable=True),
+    ActionType.TEXT:       ActionConfig(color="#2196F3", icon_name="ph.text-align-left"),
+    ActionType.WAIT_UNTIL: ActionConfig(color="#AB47BC", icon_name="ph.eye"),
     # ActionType.LOOP:     ActionConfig(color="#F44336", icon_name="ph.repeat", pairable=True), # Meh
 }
 
