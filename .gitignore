@@ -18,3 +18,6 @@ macro_studio.db
 site/
 .cache/
 .zensical/
+# Python bytecode caches
+__pycache__/
+*.py[cod]
