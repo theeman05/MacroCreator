@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QLabel, QTabWidget, QDockWidget, QStatusBar, QVBoxLayout, QWidget, QSystemTrayIcon
 )
 from PySide6.QtGui import QCloseEvent, QFont, QIcon
-from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtCore import Qt, Signal, QTimer, QSettings
 from pynput import keyboard
 
 from macro_studio.core.types_and_enums import LogPacket, LogLevel, LogErrorPacket, WorkerState
@@ -42,6 +42,7 @@ def getResourcePath(relative_path):
     return os.path.join(base_path, relative_path)
 
 DEFAULT_SIZE = (700, 700)
+_APP_ID = "com.theeman05.macro_studio.client.v1"
 
 class MainWindow(QMainWindow):
     start_signal = Signal()
@@ -51,13 +52,14 @@ class MainWindow(QMainWindow):
 
     def __init__(self, task_manager, profile: "Profile"):
         if sys.platform == 'win32':
-            my_app_id = 'com.theeman05.macro_studio.client.v1'
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(my_app_id)
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(_APP_ID)
 
         self.app = QApplication(sys.argv)
         super().__init__()
         self.setWindowTitle(f"Macro Studio v{__version__}")
-        self.resize(*DEFAULT_SIZE)
+
+        self.settings = QSettings(_APP_ID, "MacroStudio")
+
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
         self._setupTrayIcon()
 
@@ -103,11 +105,11 @@ class MainWindow(QMainWindow):
         timer_breathe.timeout.connect(lambda: None)
         timer_breathe.start(500)
 
+        self._readGlobalSettings()
         self._connectSignals()
 
         # Initial state stuff
         self.listener.start()
-        self.toggleOverlay()
         self._onTabChanged(0)
         self.stopMacroVisuals()
 
@@ -126,6 +128,22 @@ class MainWindow(QMainWindow):
             '<f8>': lambda: self.hotkey_signal.emit("F8"),
             '<f6>': lambda: self.hotkey_signal.emit("F6")
         })
+
+    def _readGlobalSettings(self):
+        geometry = self.settings.value("geometry")
+        if geometry:
+            self.restoreGeometry(geometry)
+        else:
+            self.resize(*DEFAULT_SIZE)
+
+        is_overlay_enabled = self.settings.value("ui/overlayEnabled", True, type=bool)
+        self.header.btn_overlay.setChecked(is_overlay_enabled)
+        self.header.toggleOverlayVisual(is_overlay_enabled)
+        self.toggleOverlay()
+
+    def _writeGlobalSettings(self):
+        self.settings.setValue("geometry", self.saveGeometry())
+        self.settings.setValue("ui/overlayEnabled", self.header.btn_overlay.isChecked())
 
     def _onProfileLoaded(self, is_first_load):
         self.overlay.render_geometry.clear()
@@ -270,6 +288,7 @@ class MainWindow(QMainWindow):
             self.stopMacroVisuals()
 
     def closeEvent(self, event: QCloseEvent):
+        self._writeGlobalSettings()
         self.stop_signal.emit()
         self.overlay.destroy()
         event.accept()

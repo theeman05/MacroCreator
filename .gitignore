@@ -18,3 +18,8 @@ macro_studio.db
 site/
 .cache/
 .zensical/
+# Python bytecode
+__pycache__/
+*.py[cod]
+# Claude Code local config
+.claude/

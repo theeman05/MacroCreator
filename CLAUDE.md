@@ -136,3 +136,5 @@ color/image functions do not.
   unlocked.
 - Public API surface is whatever is exported in `macro_studio/__init__.py`. User docstrings
   follow Google style (rendered by mkdocstrings into `docs/`).
+- Git commits: write plain commit messages. Do **not** add a `Co-Authored-By: Claude ...`
+  trailer.
