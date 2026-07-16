@@ -108,6 +108,27 @@ class TaskContext:
         return self._controller.isInterrupted()
 
     @property
+    def is_queued(self):
+        """Checks if the task is queued to run on the next run cycle.
+
+        Returns:
+            ``True`` if the task is queued, ``False`` otherwise.
+        """
+        return self._controller.isQueued()
+
+    @property
+    def is_ready(self):
+        """Checks if the task is resting and ready to be queued for execution.
+
+        This includes tasks that have never run (Idle) and tasks that
+        have completed their previous lifecycle (Dead).
+
+        Returns:
+            ``True`` if the task is ready, ``False`` otherwise.
+        """
+        return self._controller.isReady()
+
+    @property
     def is_running(self) -> bool:
         """Checks if the task is actively running.
 
@@ -122,7 +143,7 @@ class TaskContext:
 
         This property indicates the local state of the task. It returns ``True``
         if the task has not reached a terminal state (e.g., Stopped, Finished,
-        or Crashed). This local state remains ``True`` even if the master engine's
+        or Crashed), and is not Idle. This local state remains ``True`` even if the master engine's
         global worker is currently paused or completely offline.
 
         Returns:
@@ -158,6 +179,13 @@ class TaskContext:
             bool: True if the task controller is valid, False otherwise.
         """
         return self._controller.isValid()
+
+    def isSolo(self):
+        """Checks if the task is currently solo selected.
+        Returns:
+            bool: True if the task controller is solo selected, False otherwise
+        """
+        return self._controller.isSolo()
 
     @require_active_task
     def setEnabled(self, enabled: bool):

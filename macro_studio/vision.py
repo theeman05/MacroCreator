@@ -150,6 +150,19 @@ def _sctWithOptionalBounds(bounds):
         return sct.grab(region), region
 
 
+def _templateHelper(template_path: str, bounds: QRect | None = None):
+    screenshot, region = _sctWithOptionalBounds(bounds)
+
+    screen_img = np.array(screenshot)[..., :3]  # BGRA to BGR
+    template_img = cv2.imread(template_path, cv2.IMREAD_COLOR)
+
+    if template_img is None:
+        raise FileNotFoundError(f"Template image not found at: {template_path}")
+
+    # Perform OpenCV template matching
+    return template_img, region, cv2.matchTemplate(screen_img, template_img, cv2.TM_CCOEFF_NORMED)
+
+
 def findImageCenter(template_path: str, bounds: QRect | None = None, threshold: float=0.8) -> tuple[QPoint, float] | None:
     """Finds an image template on the screen and return its absolute center coordinates.
 
@@ -161,16 +174,7 @@ def findImageCenter(template_path: str, bounds: QRect | None = None, threshold: 
     Returns:
         The absolute center coordinates of the found template object and the confidence score, or None if not found.
     """
-    screenshot, region = _sctWithOptionalBounds(bounds)
-
-    screen_img = np.array(screenshot)[..., :3]  # BGRA to BGR
-    template_img = cv2.imread(template_path, cv2.IMREAD_COLOR)
-
-    if template_img is None:
-        raise FileNotFoundError(f"Template image not found at: {template_path}")
-
-    # Perform OpenCV template matching
-    result = cv2.matchTemplate(screen_img, template_img, cv2.TM_CCOEFF_NORMED)
+    template_img, region, result = _templateHelper(template_path, bounds)
     _, max_val, _, max_loc = cv2.minMaxLoc(result)
 
     if max_val >= threshold:
@@ -180,6 +184,59 @@ def findImageCenter(template_path: str, bounds: QRect | None = None, threshold: 
         return QPoint(center_x, center_y), max_val
 
     return None
+
+
+def findImageCenters(template_path: str, bounds: QRect | None = None, threshold: float = 0.8) -> list[
+    tuple[QPoint, float]]:
+    """Finds all instances of an image template on the screen and returns their absolute center coordinates.
+
+    Args:
+        template_path (str): Path to the template image.
+        bounds: The bounds to search for the template in. If no bounds are provided, it searches the entire primary monitor.
+        threshold: Confidence threshold to consider the result as a potential match.
+
+    Returns:
+        A list of tuples containing the absolute center coordinates (QPoint) and the confidence score (float).
+        Returns an empty list if no matches are found.
+    """
+    template_img, region, result = _templateHelper(template_path, bounds)
+
+    # Find all locations in the result matrix that exceed the threshold
+    y_locs, x_locs = np.where(result >= threshold)
+
+    h, w = template_img.shape[:2]
+    raw_matches = []
+
+    # Extract the coordinates and their specific confidence scores
+    for x, y in zip(x_locs, y_locs):
+        score = result[y, x]
+        raw_matches.append((x, y, score))
+
+    # Sort matches by confidence score descending so we always keep the strongest match in a cluster
+    raw_matches.sort(key=lambda match: match[2], reverse=True)
+
+    final_results = []
+
+    for x, y, score in raw_matches:
+        is_duplicate = False
+
+        # Compare against already validated matches to avoid cluster duplicates
+        for prev_pt, _ in final_results:
+            # Revert the absolute coordinates back to relative for distance checking
+            prev_x = prev_pt.x() - region["left"] - (w // 2)
+            prev_y = prev_pt.y() - region["top"] - (h // 2)
+
+            # If the current point is within half the width/height of an existing match, it's the same object
+            if abs(x - prev_x) < (w // 2) and abs(y - prev_y) < (h // 2):
+                is_duplicate = True
+                break
+
+        if not is_duplicate:
+            center_x = int(x + (w // 2) + region["left"])
+            center_y = int(y + (h // 2) + region["top"])
+            final_results.append((QPoint(center_x, center_y), float(score)))
+
+    return final_results
 
 
 def getScreenState(bounds: QRect | None = None) -> np.ndarray:

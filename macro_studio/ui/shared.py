@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Union
 import qtawesome as qta
-from PySide6.QtCore import Qt, QSize, QTimer
+from PySide6.QtCore import Qt, QSize, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QIcon
 from PySide6.QtWidgets import QTableWidgetItem, QLineEdit, QWidget, QPushButton, QLabel
 
@@ -46,6 +46,7 @@ class HoverButton(QPushButton):
 
 class ToggleHoverButton(HoverButton):
     """A checkable hover button with dynamic tooltips and checked states."""
+    rightClicked = Signal()
 
     def __init__(self, icon_name, checked_icon_name=None, normal_color=IconColor.DISABLED, hover_color=IconColor.DISABLED_HOVER,
                  checked_color=IconColor.SELECTED, checked_hover_color=IconColor.SELECTED_HOVER,
@@ -76,6 +77,12 @@ class ToggleHoverButton(HoverButton):
             self.setIcon(self.icon_checked_hover if is_checked else self.icon_hover)
         else:
             self.setIcon(self.icon_checked if is_checked else self.icon_normal)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.RightButton:
+            self.rightClicked.emit()
+        else:
+            super().mousePressEvent(event)
 
     def enterEvent(self, event):
         if self.isEnabled():

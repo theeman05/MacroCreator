@@ -1,12 +1,12 @@
-import uuid, sys, signal, ctypes, os
+import uuid, sys, signal, ctypes, os, winsound
 from datetime import datetime
 from typing import TYPE_CHECKING
 
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QLabel, QTabWidget, QDockWidget, QStatusBar,QVBoxLayout, QWidget
+    QApplication, QMainWindow, QLabel, QTabWidget, QDockWidget, QStatusBar, QVBoxLayout, QWidget, QSystemTrayIcon
 )
 from PySide6.QtGui import QCloseEvent, QFont, QIcon
-from PySide6.QtCore import Qt, Signal, QTimer, QEvent
+from PySide6.QtCore import Qt, Signal, QTimer, QSettings, , QEvent
 from pynput import keyboard
 
 from macro_studio.core.types_and_enums import LogPacket, LogLevel, LogErrorPacket, WorkerState
@@ -42,6 +42,7 @@ def getResourcePath(relative_path):
     return os.path.join(base_path, relative_path)
 
 DEFAULT_SIZE = (700, 700)
+_APP_ID = "com.theeman05.macro_studio.client.v1"
 
 class MainWindow(QMainWindow):
     start_signal = Signal()
@@ -51,15 +52,16 @@ class MainWindow(QMainWindow):
 
     def __init__(self, task_manager, profile: "Profile"):
         if sys.platform == 'win32':
-            my_app_id = 'com.theeman05.macro_studio.client.v1'
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(my_app_id)
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(_APP_ID)
 
         self.app = QApplication(sys.argv)
         super().__init__()
         self.setWindowTitle(f"Macro Studio v{__version__}")
-        self.resize(*DEFAULT_SIZE)
+
+        self.settings = QSettings(_APP_ID, "MacroStudio")
+
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
-        self._setIcon()
+        self._setupTrayIcon()
 
         global_font = QFont("Segoe UI", 10)
         global_font.setStyleHint(QFont.StyleHint.SansSerif)
@@ -103,11 +105,11 @@ class MainWindow(QMainWindow):
         timer_breathe.timeout.connect(lambda: None)
         timer_breathe.start(500)
 
+        self._readGlobalSettings()
         self._connectSignals()
 
         # Initial state stuff
         self.listener.start()
-        self.toggleOverlay()
         self._onTabChanged(0)
         self.stopMacroVisuals()
 
@@ -127,6 +129,22 @@ class MainWindow(QMainWindow):
             '<f6>': lambda: self.hotkey_signal.emit("F6")
         })
 
+    def _readGlobalSettings(self):
+        geometry = self.settings.value("geometry")
+        if geometry:
+            self.restoreGeometry(geometry)
+        else:
+            self.resize(*DEFAULT_SIZE)
+
+        is_overlay_enabled = self.settings.value("ui/overlayEnabled", True, type=bool)
+        self.header.btn_overlay.setChecked(is_overlay_enabled)
+        self.header.toggleOverlayVisual(is_overlay_enabled)
+        self.toggleOverlay()
+
+    def _writeGlobalSettings(self):
+        self.settings.setValue("geometry", self.saveGeometry())
+        self.settings.setValue("ui/overlayEnabled", self.header.btn_overlay.isChecked())
+
     def _onProfileLoaded(self, is_first_load):
         self.overlay.render_geometry.clear()
         self.overlay.update()
@@ -134,14 +152,22 @@ class MainWindow(QMainWindow):
             self.header.loadOnce()
         self.variables_tab.onProfileLoaded()
 
-    def _setIcon(self):
-        icon_path = getResourcePath(os.path.join("assets", "app_icon.ico"))
-        if os.path.exists(icon_path):
-            app_icon = QIcon(icon_path)
-            self.setWindowIcon(app_icon)
-            self.app.setWindowIcon(app_icon)
-        else:
-            print(f"WARNING: Icon not found at {icon_path}")
+    def _setIcon(self, icon: QIcon):
+        self.setWindowIcon(icon)
+        self.app.setWindowIcon(icon)
+
+    def _setupTrayIcon(self):
+        """Initializes the system tray icon."""
+        self.tray_icon = QSystemTrayIcon(self)
+
+        # Load your state icons
+        self.idle_icon = QIcon(getResourcePath(os.path.join("assets", "app_icon.ico")))
+        self.running_icon = QIcon(getResourcePath(os.path.join("assets", "app_icon_green.ico")))
+
+        # Set default state
+        self._setIcon(self.idle_icon)
+        self.tray_icon.setToolTip("Macro Studio - Idle")
+        self.tray_icon.show()
 
     def _handleInterrupt(self, signum, frame):
         self.stop_signal.emit()
@@ -219,9 +245,32 @@ class MainWindow(QMainWindow):
         self.runtime_widget.stopCounting()
 
     def setState(self, state: WorkerState):
+        is_different = state != self.state
         self.state = state
         self.status_label.setText(f"STATUS: {state.name}")
         self.header.updateStateVisual(state)
+
+        if is_different:
+            if self.state == WorkerState.RUNNING:
+                self._setIcon(self.running_icon)
+                self.tray_icon.setToolTip("Macro Studio - Running")
+
+                self.tray_icon.showMessage("⚡ Macro Studio", "Task sequence started.", QSystemTrayIcon.MessageIcon.Information, 1500)
+
+                winsound.MessageBeep(winsound.MB_ICONASTERISK)
+            else:
+                self._setIcon(self.idle_icon)
+                if self.state == WorkerState.IDLE:
+                    self.tray_icon.setToolTip("Macro Studio - Idle")
+                    self.tray_icon.showMessage("🛑 Macro Studio", "Task sequence stopped.",QSystemTrayIcon.MessageIcon.Information, 1500)
+
+                    winsound.MessageBeep(winsound.MB_ICONHAND)
+                elif self.state == WorkerState.PAUSED:
+                    self.tray_icon.setToolTip("Macro Studio - Paused")
+                    self.tray_icon.showMessage("⏸️ Macro Studio", "Task sequence paused.",QSystemTrayIcon.MessageIcon.Information, 1500)
+                else:
+                    self.tray_icon.setToolTip("Macro Studio - Interrupted")
+                    self.tray_icon.showMessage("❗Macro Studio", "Task sequence interrupted.", QSystemTrayIcon.MessageIcon.Information, 1500)
 
     def toggleOverlay(self):
         self.overlay.is_showing_geometry = self.header.btn_overlay.isChecked()
@@ -247,6 +296,7 @@ class MainWindow(QMainWindow):
             self.overlay.raise_()
 
     def closeEvent(self, event: QCloseEvent):
+        self._writeGlobalSettings()
         self.stop_signal.emit()
         self.overlay.destroy()
         event.accept()
