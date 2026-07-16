@@ -34,6 +34,7 @@ class ConditionType(str, Enum):
     NUMBER = "Number"
     COLOR = "Color"
     TEXT = "Text"
+    IMAGE = "Image"
 
 class CompareOp(str, Enum):
     EQ = "=="
@@ -47,14 +48,20 @@ class TextMatch(str, Enum):
     CONTAINS = "contains"
     EQUALS = "equals"
 
-# Geometry type the watch area captures for each condition (Region for OCR, Point for color).
+class ImageMatch(str, Enum):
+    APPEARS = "appears"
+    DISAPPEARS = "disappears"
+
+# Geometry type the watch area captures for each condition (Region for OCR/image, Point for color).
 _COND_AREA_TYPE = {
     ConditionType.NUMBER: QRect,
     ConditionType.TEXT: QRect,
     ConditionType.COLOR: QPoint,
+    ConditionType.IMAGE: QRect,
 }
 
 DEFAULT_COLOR_TOLERANCE = 20
+DEFAULT_IMAGE_THRESHOLD = 0.8
 
 @dataclass
 class WaitCondition:
@@ -65,13 +72,16 @@ class WaitCondition:
     this keeps a text literal distinguishable from a variable name (both are strings).
     """
     condition_type: ConditionType = ConditionType.NUMBER
-    area: object = None            # QRect (Number/Text) or QPoint (Color) literal
+    area: object = None            # QRect (Number/Text/Image) or QPoint (Color) literal; None for Image = whole screen
     area_var: str | None = None    # variable name for the watch area; wins over area
     operator: CompareOp = CompareOp.GTE   # Number comparison
     text_mode: TextMatch = TextMatch.CONTAINS  # Text comparison
+    image_match: ImageMatch = ImageMatch.APPEARS  # Image: wait for template to appear or disappear
     tolerance: int = DEFAULT_COLOR_TOLERANCE   # Color match tolerance
+    threshold: float = DEFAULT_IMAGE_THRESHOLD  # Image template match confidence (0..1)
     target: object = None          # number / QColor / str literal to compare against
     target_var: str | None = None  # variable name for the target; wins over target
+    template_b64: str | None = None  # Image: base64 PNG of the captured template (the Image "target")
     store_var: str | None = None   # variable to write each reading into (optional)
     poll_interval: float | None = None  # seconds between checks; None => engine default
 
@@ -83,7 +93,9 @@ class WaitCondition:
             "condition_type": self.condition_type.name,
             "operator": self.operator.name,
             "text_mode": self.text_mode.name,
+            "image_match": self.image_match.name,
             "tolerance": self.tolerance,
+            "threshold": self.threshold,
         }
         if self.area_var:
             data["area_var"] = self.area_var
@@ -95,6 +107,7 @@ class WaitCondition:
         elif self.target is not None:
             data["target"] = GlobalTypeHandler.toString(self.target)
 
+        GlobalTypeHandler.setIfEvals("template_b64", self.template_b64, data)
         GlobalTypeHandler.setIfEvals("store_var", self.store_var, data)
         GlobalTypeHandler.setIfEvals("poll_interval", self.poll_interval, data)
         return data
@@ -105,7 +118,10 @@ class WaitCondition:
         cond.condition_type = ConditionType[data.get("condition_type", ConditionType.NUMBER.name)]
         cond.operator = CompareOp[data.get("operator", CompareOp.GTE.name)]
         cond.text_mode = TextMatch[data.get("text_mode", TextMatch.CONTAINS.name)]
+        cond.image_match = ImageMatch[data.get("image_match", ImageMatch.APPEARS.name)]
         cond.tolerance = data.get("tolerance", DEFAULT_COLOR_TOLERANCE)
+        cond.threshold = data.get("threshold", DEFAULT_IMAGE_THRESHOLD)
+        cond.template_b64 = data.get("template_b64")
         cond.store_var = data.get("store_var")
         cond.poll_interval = data.get("poll_interval")
 

@@ -7,15 +7,15 @@ variable, mirroring the mouse editor's value-or-variable pattern.
 """
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt, Signal, QRect, QPoint
-from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt, Signal, QRect, QPoint, QByteArray, QBuffer, QIODevice, QEventLoop, QTimer
+from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import (
     QWidget, QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QComboBox,
     QLineEdit, QSpinBox, QPushButton, QCheckBox, QStackedWidget)
 
 from macro_studio.core.types_and_enums import CaptureMode
 from macro_studio.core.recording.timeline_handler import (
-    WaitCondition, ConditionType, CompareOp, TextMatch)
+    WaitCondition, ConditionType, CompareOp, TextMatch, ImageMatch)
 from macro_studio.core.registries.type_handler import GlobalTypeHandler
 
 if TYPE_CHECKING:
@@ -27,12 +27,14 @@ _AREA_TYPES = {
     ConditionType.NUMBER: (QRect,),
     ConditionType.TEXT: (QRect,),
     ConditionType.COLOR: (QPoint,),
+    ConditionType.IMAGE: (QRect,),
 }
 # The type a reading produces, per condition — the store target must match it.
 _STORE_TYPES = {
     ConditionType.NUMBER: (int, float),
     ConditionType.TEXT: (str,),
     ConditionType.COLOR: (QColor,),
+    ConditionType.IMAGE: (QPoint,),  # the matched center point
 }
 
 _VALUE_IDX = 0
@@ -45,6 +47,23 @@ def _toNumber(text):
         return int(num) if num.is_integer() else num
     except (ValueError, TypeError):
         return None
+
+
+def _pixmapToB64(pixmap: QPixmap) -> str:
+    """Encode a QPixmap as base64 PNG text for storage on the condition."""
+    ba = QByteArray()
+    buf = QBuffer(ba)
+    buf.open(QIODevice.OpenModeFlag.WriteOnly)
+    pixmap.save(buf, "PNG")
+    buf.close()
+    return bytes(ba.toBase64()).decode("ascii")
+
+
+def _b64ToPixmap(b64: str) -> QPixmap:
+    """Decode base64 PNG text back into a QPixmap (for the thumbnail preview)."""
+    pixmap = QPixmap()
+    pixmap.loadFromData(QByteArray.fromBase64(b64.encode("ascii")), "PNG")
+    return pixmap
 
 
 def summaryText(cond: WaitCondition) -> str:
@@ -60,6 +79,12 @@ def summaryText(cond: WaitCondition) -> str:
     elif cond.condition_type == ConditionType.TEXT:
         target = cond.target_var or (f'"{cond.target}"' if cond.target else "?")
         text = f"Wait until [{area}] {cond.text_mode.value} {target}"
+    elif cond.condition_type == ConditionType.IMAGE:
+        # An unset area searches the whole screen rather than being "unknown".
+        where = cond.area_var or (GlobalTypeHandler.toString(cond.area) if cond.area is not None else "screen")
+        pct = round(cond.threshold * 100)
+        img = "set" if cond.template_b64 else "?"
+        text = f"Wait until [{where}] image ({img}) {cond.image_match.value} (≥{pct}%)"
     else:  # COLOR
         target = cond.target_var or (GlobalTypeHandler.toString(cond.target) if cond.target is not None else "?")
         text = f"Wait until [{area}] ~ {target} (±{cond.tolerance})"
@@ -78,6 +103,7 @@ class WaitUntilDialog(QDialog):
         self.overlay = overlay
         self._area_literal = None   # QRect / QPoint captured by drawing
         self._color_literal = None  # QColor captured by picking
+        self._template_b64 = None   # base64 PNG captured for an image condition
 
         self.setWindowTitle("Wait Until")
         # Non-modal: drawing the watch area hides this dialog while the capture
@@ -186,12 +212,41 @@ class WaitUntilDialog(QDialog):
         color_lay.addWidget(self.color_target_mode)
         color_lay.addWidget(self.color_target_stack, 1)
 
+        # Image page
+        image_page = QWidget()
+        image_lay = QVBoxLayout(image_page)
+        image_lay.setContentsMargins(0, 0, 0, 0)
+        img_top = QHBoxLayout()
+        self.btn_capture_image = QPushButton("Capture image…")
+        self.lbl_template = QLabel("No image")
+        self.lbl_template.setFixedHeight(40)
+        img_top.addWidget(self.btn_capture_image)
+        img_top.addWidget(self.lbl_template, 1)
+        img_bottom = QHBoxLayout()
+        self.image_match_combo = QComboBox()
+        for im in ImageMatch:
+            self.image_match_combo.addItem(im.value, im)
+        self.threshold_spin = QSpinBox()
+        self.threshold_spin.setRange(1, 100)
+        self.threshold_spin.setSuffix("%")
+        self.threshold_spin.setToolTip("Minimum match confidence")
+        self.btn_test_image = QPushButton("Test")
+        self.lbl_test = QLabel("")
+        img_bottom.addWidget(self.image_match_combo)
+        img_bottom.addWidget(QLabel("≥"))
+        img_bottom.addWidget(self.threshold_spin)
+        img_bottom.addWidget(self.btn_test_image)
+        img_bottom.addWidget(self.lbl_test, 1)
+        image_lay.addLayout(img_top)
+        image_lay.addLayout(img_bottom)
+
         # Map condition type -> its comparison page explicitly, so the pages don't
         # depend on ConditionType enum ordering.
         self._cmp_index = {
             ConditionType.NUMBER: self.cmp_stack.addWidget(num_page),
             ConditionType.COLOR: self.cmp_stack.addWidget(color_page),
             ConditionType.TEXT: self.cmp_stack.addWidget(text_page),
+            ConditionType.IMAGE: self.cmp_stack.addWidget(image_page),
         }
         form.addRow("Reading", self.cmp_stack)
 
@@ -221,8 +276,11 @@ class WaitUntilDialog(QDialog):
         self.num_target_mode.currentIndexChanged.connect(self.num_target_stack.setCurrentIndex)
         self.text_target_mode.currentIndexChanged.connect(self.text_target_stack.setCurrentIndex)
         self.color_target_mode.currentIndexChanged.connect(self.color_target_stack.setCurrentIndex)
+        self.image_match_combo.currentIndexChanged.connect(self._updateStoreEnabled)
         self.btn_draw.clicked.connect(self._drawArea)
         self.btn_pick_color.clicked.connect(self._pickColor)
+        self.btn_capture_image.clicked.connect(self._captureImage)
+        self.btn_test_image.clicked.connect(self._testImage)
         self.btn_cancel.clicked.connect(self.reject)
         self.btn_save.clicked.connect(self.accept)
 
@@ -257,6 +315,17 @@ class WaitUntilDialog(QDialog):
         self.cmp_stack.setCurrentIndex(self._cmp_index[ct])
         self._fillVarCombo(self.area_var_combo, _AREA_TYPES[ct])
         self._fillVarCombo(self.store_var_combo, _STORE_TYPES[ct])
+        self._updateStoreEnabled()
+
+    def _updateStoreEnabled(self):
+        """Disable the store row when nothing can be stored (image + disappears)."""
+        ct = ConditionType(self.type_combo.currentData())
+        disappears = (ct == ConditionType.IMAGE and
+                      ImageMatch(self.image_match_combo.currentData()) == ImageMatch.DISAPPEARS)
+        if disappears and self.chk_store.isChecked():
+            self.chk_store.setChecked(False)
+        self.chk_store.setEnabled(not disappears)
+        self.store_var_combo.setEnabled(not disappears)
 
     def _captureWithOverlay(self, mode):
         """Hide the dialog, run the capture overlay, then restore the dialog."""
@@ -281,6 +350,69 @@ class WaitUntilDialog(QDialog):
             self._color_literal = result
             self._setSwatch(result)
 
+    def _captureImage(self):
+        result = self._captureWithOverlay(CaptureMode.IMAGE)
+        if isinstance(result, QPixmap) and not result.isNull():
+            self._template_b64 = _pixmapToB64(result)
+            self._setThumbnail(result)
+            self.lbl_test.setText("")
+
+    def _setThumbnail(self, pixmap: QPixmap):
+        self.lbl_template.setPixmap(
+            pixmap.scaledToHeight(40, Qt.TransformationMode.SmoothTransformation))
+
+    def _imageSearchArea(self) -> QRect | None:
+        """The current search bounds (drawn literal or variable value), or None = whole screen."""
+        if self.area_mode.currentIndex() == _VAR_IDX:
+            cfg = self.var_store.get(self.area_var_combo.currentData())
+            value = cfg.value if cfg else None
+        else:
+            value = self._area_literal
+        return value if isinstance(value, QRect) else None
+
+    def _testImage(self):
+        """Run one match against the live screen so the user can tune the threshold."""
+        if not self._template_b64:
+            self.lbl_test.setText("Capture an image first")
+            return
+        from macro_studio.vision import templateFromB64, findImageCenterFromArray
+        try:
+            template = templateFromB64(self._template_b64)
+        except ValueError:
+            self.lbl_test.setText("Invalid template")
+            return
+        threshold = self.threshold_spin.value() / 100
+        area = self._imageSearchArea()
+
+        # Hide our own windows so the grab sees the target app rather than
+        # MacroStudio, and let the screen settle before capturing.
+        main_window = self.overlay.main_window if self.overlay else None
+        self.hide()
+        if main_window is not None:
+            main_window.hide()
+        self._settle(150)
+        try:
+            result = findImageCenterFromArray(template, area, threshold)
+        finally:
+            if main_window is not None:
+                main_window.show()
+            self.show()
+            self.raise_()
+            self.activateWindow()
+
+        if result is not None:
+            _pt, conf = result
+            self.lbl_test.setText(f"✓ found (score {conf:.2f})")
+        else:
+            self.lbl_test.setText(f"✗ not found (≥{self.threshold_spin.value()}%)")
+
+    @staticmethod
+    def _settle(ms: int):
+        """Spin the event loop briefly so hidden windows clear the screen before a grab."""
+        loop = QEventLoop()
+        QTimer.singleShot(ms, loop.quit)
+        loop.exec()
+
     # --- load / save ---
     def _loadFrom(self, cond: WaitCondition):
         self.type_combo.setCurrentIndex(self.type_combo.findData(cond.condition_type))
@@ -289,6 +421,11 @@ class WaitUntilDialog(QDialog):
         self.tol_spin.setValue(cond.tolerance)
         self.op_combo.setCurrentIndex(self.op_combo.findData(cond.operator))
         self.text_mode_combo.setCurrentIndex(self.text_mode_combo.findData(cond.text_mode))
+        self.image_match_combo.setCurrentIndex(self.image_match_combo.findData(cond.image_match))
+        self.threshold_spin.setValue(round(cond.threshold * 100))
+        if cond.template_b64:
+            self._template_b64 = cond.template_b64
+            self._setThumbnail(_b64ToPixmap(cond.template_b64))
 
         # Watch area
         if cond.area_var:
@@ -329,18 +466,25 @@ class WaitUntilDialog(QDialog):
             self.chk_store.setChecked(True)
             self._selectVar(self.store_var_combo, cond.store_var)
 
+        self._updateStoreEnabled()
+
     def resultCondition(self) -> WaitCondition:
         cond = WaitCondition()
         # QComboBox returns str-Enum userData as a plain str; coerce back to the enum.
         cond.condition_type = ConditionType(self.type_combo.currentData())
         cond.operator = CompareOp(self.op_combo.currentData())
         cond.text_mode = TextMatch(self.text_mode_combo.currentData())
+        cond.image_match = ImageMatch(self.image_match_combo.currentData())
         cond.tolerance = self.tol_spin.value()
+        cond.threshold = self.threshold_spin.value() / 100
 
         if self.area_mode.currentIndex() == _VAR_IDX:
             cond.area_var = self.area_var_combo.currentData()
         else:
             cond.area = self._area_literal
+
+        if cond.condition_type == ConditionType.IMAGE:
+            cond.template_b64 = self._template_b64
 
         if cond.condition_type == ConditionType.NUMBER:
             if self.num_target_mode.currentIndex() == _VAR_IDX:

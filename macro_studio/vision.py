@@ -1,4 +1,4 @@
-import cv2, pytesseract, mss, os
+import cv2, pytesseract, mss, os, base64
 import numpy as np
 from PySide6.QtCore import QRect, QPoint
 from PIL import Image
@@ -150,6 +150,46 @@ def _sctWithOptionalBounds(bounds):
         return sct.grab(region), region
 
 
+def templateFromB64(b64: str) -> np.ndarray:
+    """Decode a base64-encoded PNG template into a BGR numpy array.
+
+    Args:
+        b64: base64 text of a PNG image (as stored on a WAIT_UNTIL image condition).
+
+    Returns:
+        The template as a BGR numpy array, ready for ``findImageCenterFromArray``.
+
+    Raises:
+        ValueError: If the string cannot be base64-decoded or is not a decodable image.
+    """
+    raw = base64.b64decode(b64)  # binascii.Error is a subclass of ValueError
+    template = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR)
+    if template is None:
+        raise ValueError("Could not decode template image bytes")
+    return template
+
+
+def _findTemplate(template_bgr: np.ndarray, bounds: QRect | None, threshold: float) -> tuple[QPoint, float] | None:
+    """Shared match core: locate ``template_bgr`` within ``bounds`` (or the whole screen)."""
+    screenshot, region = _sctWithOptionalBounds(bounds)
+    screen_img = np.array(screenshot)[..., :3]  # BGRA to BGR
+
+    h, w = template_bgr.shape[:2]
+    # matchTemplate raises when the template is larger than the search image.
+    if h > screen_img.shape[0] or w > screen_img.shape[1]:
+        return None
+
+    result = cv2.matchTemplate(screen_img, template_bgr, cv2.TM_CCOEFF_NORMED)
+    _, max_val, _, max_loc = cv2.minMaxLoc(result)
+
+    if max_val >= threshold:
+        center_x = max_loc[0] + (w // 2) + region["left"]
+        center_y = max_loc[1] + (h // 2) + region["top"]
+        return QPoint(center_x, center_y), max_val
+
+    return None
+
+
 def findImageCenter(template_path: str, bounds: QRect | None = None, threshold: float=0.8) -> tuple[QPoint, float] | None:
     """Finds an image template on the screen and return its absolute center coordinates.
 
@@ -161,25 +201,27 @@ def findImageCenter(template_path: str, bounds: QRect | None = None, threshold: 
     Returns:
         The absolute center coordinates of the found template object and the confidence score, or None if not found.
     """
-    screenshot, region = _sctWithOptionalBounds(bounds)
-
-    screen_img = np.array(screenshot)[..., :3]  # BGRA to BGR
     template_img = cv2.imread(template_path, cv2.IMREAD_COLOR)
-
     if template_img is None:
         raise FileNotFoundError(f"Template image not found at: {template_path}")
+    return _findTemplate(template_img, bounds, threshold)
 
-    # Perform OpenCV template matching
-    result = cv2.matchTemplate(screen_img, template_img, cv2.TM_CCOEFF_NORMED)
-    _, max_val, _, max_loc = cv2.minMaxLoc(result)
 
-    if max_val >= threshold:
-        h, w = template_img.shape[:2]
-        center_x = max_loc[0] + (w // 2) + region["left"]
-        center_y = max_loc[1] + (h // 2) + region["top"]
-        return QPoint(center_x, center_y), max_val
+def findImageCenterFromArray(template_bgr: np.ndarray, bounds: QRect | None = None, threshold: float=0.8) -> tuple[QPoint, float] | None:
+    """Like ``findImageCenter`` but takes an already-decoded BGR template array.
 
-    return None
+    Used at runtime for image WAIT_UNTIL conditions, whose template lives in the
+    step (base64) rather than on disk — see ``templateFromB64``.
+
+    Args:
+        template_bgr: The template as a BGR numpy array.
+        bounds: The bounds to search within. If ``None``, searches the whole primary monitor.
+        threshold: Confidence threshold to consider the result as a match.
+
+    Returns:
+        The absolute center coordinates of the match and the confidence score, or None if not found.
+    """
+    return _findTemplate(template_bgr, bounds, threshold)
 
 
 def getScreenState(bounds: QRect | None = None) -> np.ndarray:

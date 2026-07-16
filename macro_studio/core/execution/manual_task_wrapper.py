@@ -7,7 +7,7 @@ from macro_studio.core.types_and_enums import TaskInterruptedException
 from macro_studio.core.recording.input_translator import DirectInputTranslator
 from macro_studio.core.recording.timeline_handler import (
     ActionType, TimelineStep, M_FUNCTION_TO_PYDIRECTINPUT,
-    WaitCondition, ConditionType, CompareOp, TextMatch)
+    WaitCondition, ConditionType, CompareOp, TextMatch, ImageMatch)
 from macro_studio.actions import taskSleep, taskWaitForResume, taskPasteText
 
 if TYPE_CHECKING:
@@ -106,6 +106,19 @@ def _waitConditionExport(cond: WaitCondition):
             "            break",
             f"        yield from taskSleep({poll})",
         ]
+    elif cond.condition_type == ConditionType.IMAGE:
+        imports += ["import base64", "import numpy as np", "import cv2",
+                    "from macro_studio.vision import findImageCenterFromArray"]
+        # area_expr is already "None" (whole screen) when no bounds were set.
+        check = "if _match is not None:" if cond.image_match != ImageMatch.DISAPPEARS else "if _match is None:"
+        lines += [
+            f"    _template = cv2.imdecode(np.frombuffer(base64.b64decode({(cond.template_b64 or '')!r}), np.uint8), cv2.IMREAD_COLOR)",
+            "    while True:",
+            f"        _match = findImageCenterFromArray(_template, {area_expr}, {cond.threshold})",
+            f"        {check}",
+            "            break",
+            f"        yield from taskSleep({poll})",
+        ]
 
     if cond.store_var:
         lines.insert(0, f"    # Reading was also stored into variable {cond.store_var!r} in the recorder.")
@@ -129,6 +142,7 @@ class ManualTaskWrapper:
         self.step_idx = 0
         self.inputs_pending_release = set() # Set of inputs that had a partner
         self.active_solo_inputs = set() # Set of inputs to release upon task completion without partners
+        self._template_cache = {}  # base64 -> decoded BGR template (image conditions)
         self.updateModel(model)
 
     def updateModel(self, model: "TaskModel"):
@@ -227,12 +241,34 @@ class ManualTaskWrapper:
     def _resolveTarget(self, cond: WaitCondition):
         return self._resolveVar(cond.target_var) if cond.target_var else cond.target
 
-    def _readArea(self, cond: WaitCondition, area):
-        """Read the watch area, returning a typed reading (number / str / QColor) or None."""
-        if area is None:
+    def _decodeTemplate(self, cond: WaitCondition):
+        """Decode (and cache) an image condition's base64 template, or None."""
+        b64 = cond.template_b64
+        if not b64:
             return None
+        template = self._template_cache.get(b64)
+        if template is None:
+            from macro_studio.vision import templateFromB64
+            try:
+                template = templateFromB64(b64)
+            except ValueError:
+                return None
+            self._template_cache[b64] = template
+        return template
+
+    def _readArea(self, cond: WaitCondition, area):
+        """Read the watch area, returning a typed reading (number / str / QColor / match tuple) or None."""
         # Lazy import: vision pulls in OpenCV/Tesseract, unneeded unless a condition
         # actually reads the screen.
+        if cond.condition_type == ConditionType.IMAGE:
+            template = self._decodeTemplate(cond)
+            if template is None:
+                return None
+            from macro_studio.vision import findImageCenterFromArray
+            # area None => whole screen; reading is (center QPoint, confidence) or None.
+            return findImageCenterFromArray(template, area, cond.threshold)
+        if area is None:
+            return None
         from macro_studio.vision import captureScreenColor, captureScreenText
         if cond.condition_type == ConditionType.COLOR:
             return captureScreenColor(area)
@@ -242,6 +278,10 @@ class ManualTaskWrapper:
         return text
 
     def _evaluate(self, cond: WaitCondition, reading):
+        # Image is checked before the None-guard: "disappears" is satisfied by a None reading.
+        if cond.condition_type == ConditionType.IMAGE:
+            found = reading is not None
+            return (not found) if cond.image_match == ImageMatch.DISAPPEARS else found
         if reading is None:
             return False
         if cond.condition_type == ConditionType.NUMBER:
@@ -267,10 +307,18 @@ class ManualTaskWrapper:
             return isColorSimilar(reading, target, cond.tolerance)
         return False
 
-    def _maybeStore(self, cond: WaitCondition, reading):
-        if (cond.store_var and reading is not None and
+    def _storeValue(self, cond: WaitCondition, reading):
+        """The value written to store_var for a reading: the center point for image, else the reading."""
+        if reading is None:
+            return None
+        if cond.condition_type == ConditionType.IMAGE:
+            return reading[0]  # (center QPoint, confidence) -> QPoint
+        return reading
+
+    def _maybeStore(self, cond: WaitCondition, value):
+        if (cond.store_var and value is not None and
                 self.var_store.get(cond.store_var) is not None):
-            self.var_store.updateValue(cond.store_var, reading)
+            self.var_store.updateValue(cond.store_var, value)
 
     def _runWaitUntil(self, step: TimelineStep):
         cond = step.value
@@ -280,9 +328,12 @@ class ManualTaskWrapper:
         last_stored = object()  # sentinel: the first real reading always writes
         while True:
             reading = self._readArea(cond, self._resolveArea(cond))
-            if reading is not None and reading != last_stored:
-                self._maybeStore(cond, reading)
-                last_stored = reading
+            # Dedup on the stored value (image reads jitter in confidence each poll,
+            # so compare on the matched point, not the raw tuple).
+            store_val = self._storeValue(cond, reading)
+            if store_val is not None and store_val != last_stored:
+                self._maybeStore(cond, store_val)
+                last_stored = store_val
             if self._evaluate(cond, reading):
                 return
             yield from taskSleep(poll)
