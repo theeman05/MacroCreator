@@ -150,6 +150,43 @@ def _sctWithOptionalBounds(bounds):
         return sct.grab(region), region
 
 
+def trimTransparentB64(b64: str) -> str:
+    """Return a base64 PNG with fully-transparent border rows/columns removed.
+
+    Images with no alpha channel (screen grabs, JPGs) or that are entirely
+    transparent are returned unchanged. Template matching ignores alpha, so
+    trimming the transparent margins tightens the search to the real content
+    (like Photoshop's "Trim").
+
+    Args:
+        b64: base64 text of a PNG image.
+
+    Returns:
+        base64 text of the trimmed PNG, or the original string when there is
+        nothing to trim.
+    """
+    raw = base64.b64decode(b64)
+    img = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_UNCHANGED)
+    if img is None or img.ndim != 3 or img.shape[2] < 4:
+        return b64  # no alpha channel to trim against
+
+    mask = img[:, :, 3] > 0  # opaque (even partially) pixels
+    if not mask.any():
+        return b64  # fully transparent; nothing meaningful to keep
+
+    rows = np.where(mask.any(axis=1))[0]
+    cols = np.where(mask.any(axis=0))[0]
+    y0, y1 = int(rows[0]), int(rows[-1])
+    x0, x1 = int(cols[0]), int(cols[-1])
+    if x0 == 0 and y0 == 0 and x1 == img.shape[1] - 1 and y1 == img.shape[0] - 1:
+        return b64  # already tight
+
+    ok, png = cv2.imencode(".png", img[y0:y1 + 1, x0:x1 + 1])
+    if not ok:
+        return b64
+    return base64.b64encode(png.tobytes()).decode("ascii")
+
+
 def templateFromB64(b64: str) -> np.ndarray:
     """Decode a base64-encoded PNG template into a BGR numpy array.
 

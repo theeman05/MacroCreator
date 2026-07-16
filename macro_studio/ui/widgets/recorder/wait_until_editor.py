@@ -8,7 +8,7 @@ variable, mirroring the mouse editor's value-or-variable pattern.
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import (
-    Qt, Signal, QRect, QPoint, QSize, QByteArray, QBuffer, QIODevice, QEventLoop, QTimer)
+    Qt, Signal, QRect, QPoint, QSize, QByteArray, QBuffer, QIODevice, QEventLoop, QTimer, QEvent)
 from PySide6.QtGui import QColor, QPixmap, QIcon, QGuiApplication
 from PySide6.QtWidgets import (
     QWidget, QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QComboBox,
@@ -382,6 +382,12 @@ class WaitUntilDialog(QDialog):
         self.btn_cancel.clicked.connect(self.reject)
         self.btn_save.clicked.connect(self.accept)
 
+        # Hovering the watch-area controls highlights that area/point on the
+        # overlay, so the user can see where it is while the dialog is open.
+        self._area_hover_widgets = (self.btn_draw, self.lbl_area, self.area_var_combo)
+        for widget in self._area_hover_widgets:
+            widget.installEventFilter(self)
+
         self._fillVarCombo(self.num_var_combo, _NUMBER_TYPES)
         self._fillVarCombo(self.text_var_combo, (str,))
         self._fillVarCombo(self.color_var_combo, (QColor,))
@@ -434,6 +440,29 @@ class WaitUntilDialog(QDialog):
         self.activateWindow()
         return result
 
+    # --- watch-area highlighting ---
+    def _currentWatchArea(self):
+        """The area to highlight: a bound variable name, or the drawn QRect/QPoint literal."""
+        if self.area_mode.currentIndex() == _VAR_IDX:
+            return self.area_var_combo.currentData()  # variable name (str) or None
+        return self._area_literal
+
+    def eventFilter(self, obj, event):
+        if obj in self._area_hover_widgets and self.overlay is not None:
+            if event.type() == QEvent.Type.Enter:
+                area = self._currentWatchArea()
+                if area is not None:
+                    self.overlay.trySetHighlighted(area)
+            elif event.type() == QEvent.Type.Leave:
+                self.overlay.removeHighlightedData()
+        return super().eventFilter(obj, event)
+
+    def hideEvent(self, event):
+        # Clear any lingering highlight when the dialog closes or hides for capture.
+        if self.overlay is not None:
+            self.overlay.removeHighlightedData()
+        super().hideEvent(event)
+
     def _drawArea(self):
         ct = ConditionType(self.type_combo.currentData())
         mode = CaptureMode.POINT if ct == ConditionType.COLOR else CaptureMode.REGION
@@ -452,7 +481,10 @@ class WaitUntilDialog(QDialog):
         """Save a captured/pasted/loaded image into the library and select it."""
         if self.template_store is None or not isinstance(pixmap, QPixmap) or pixmap.isNull():
             return
-        entry = self.template_store.add(_pixmapToB64(pixmap))
+        # Trim fully-transparent edges (e.g. a pasted icon with padding) so the
+        # template is just the real content. Lazy import: vision pulls in OpenCV.
+        from macro_studio.vision import trimTransparentB64
+        entry = self.template_store.add(trimTransparentB64(_pixmapToB64(pixmap)))
         self.gallery.refresh()
         self.gallery.selectId(entry.id)
         self.lbl_test.setText("")
