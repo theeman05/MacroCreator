@@ -81,7 +81,8 @@ class WaitCondition:
     threshold: float = DEFAULT_IMAGE_THRESHOLD  # Image template match confidence (0..1)
     target: object = None          # number / QColor / str literal to compare against
     target_var: str | None = None  # variable name for the target; wins over target
-    template_b64: str | None = None  # Image: base64 PNG of the captured template (the Image "target")
+    template_id: int | None = None   # Image: id into the global template library (preferred)
+    template_b64: str | None = None  # Image: legacy inline base64 PNG; fallback when template_id is unset
     store_var: str | None = None   # variable to write each reading into (optional)
     poll_interval: float | None = None  # seconds between checks; None => engine default
 
@@ -107,6 +108,7 @@ class WaitCondition:
         elif self.target is not None:
             data["target"] = GlobalTypeHandler.toString(self.target)
 
+        GlobalTypeHandler.setIfEvals("template_id", self.template_id, data, strict_eval=True)
         GlobalTypeHandler.setIfEvals("template_b64", self.template_b64, data)
         GlobalTypeHandler.setIfEvals("store_var", self.store_var, data)
         GlobalTypeHandler.setIfEvals("poll_interval", self.poll_interval, data)
@@ -121,6 +123,7 @@ class WaitCondition:
         cond.image_match = ImageMatch[data.get("image_match", ImageMatch.APPEARS.name)]
         cond.tolerance = data.get("tolerance", DEFAULT_COLOR_TOLERANCE)
         cond.threshold = data.get("threshold", DEFAULT_IMAGE_THRESHOLD)
+        cond.template_id = data.get("template_id")
         cond.template_b64 = data.get("template_b64")
         cond.store_var = data.get("store_var")
         cond.poll_interval = data.get("poll_interval")

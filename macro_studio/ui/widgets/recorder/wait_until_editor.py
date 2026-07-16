@@ -7,11 +7,13 @@ variable, mirroring the mouse editor's value-or-variable pattern.
 """
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt, Signal, QRect, QPoint, QByteArray, QBuffer, QIODevice, QEventLoop, QTimer
-from PySide6.QtGui import QColor, QPixmap
+from PySide6.QtCore import (
+    Qt, Signal, QRect, QPoint, QSize, QByteArray, QBuffer, QIODevice, QEventLoop, QTimer)
+from PySide6.QtGui import QColor, QPixmap, QIcon, QGuiApplication
 from PySide6.QtWidgets import (
     QWidget, QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QComboBox,
-    QLineEdit, QSpinBox, QPushButton, QCheckBox, QStackedWidget)
+    QLineEdit, QSpinBox, QPushButton, QCheckBox, QStackedWidget, QScrollArea,
+    QToolButton, QButtonGroup, QFileDialog)
 
 from macro_studio.core.types_and_enums import CaptureMode
 from macro_studio.core.recording.timeline_handler import (
@@ -19,7 +21,7 @@ from macro_studio.core.recording.timeline_handler import (
 from macro_studio.core.registries.type_handler import GlobalTypeHandler
 
 if TYPE_CHECKING:
-    from macro_studio.core.data import VariableStore
+    from macro_studio.core.data import VariableStore, TemplateStore
 
 # Which variable types can bind to each field.
 _NUMBER_TYPES = (int, float)
@@ -66,6 +68,87 @@ def _b64ToPixmap(b64: str) -> QPixmap:
     return pixmap
 
 
+class _TemplateGallery(QWidget):
+    """A horizontal strip of selectable template thumbnails backed by a TemplateStore."""
+    selectionChanged = Signal(object)  # selected template id, or None
+
+    _THUMB = 64
+
+    def __init__(self, template_store: "TemplateStore", parent=None):
+        super().__init__(parent)
+        self.template_store = template_store
+        self._selected_id = None
+        self._group = QButtonGroup(self)
+        self._group.setExclusive(True)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFixedHeight(self._THUMB + 20)
+        self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._strip = QWidget()
+        self._row = QHBoxLayout(self._strip)
+        self._row.setContentsMargins(4, 4, 4, 4)
+        self._row.setSpacing(6)
+        self._empty = QLabel("No saved images — capture, paste, or load one below.")
+        self._empty.setStyleSheet("color: #888;")
+        self._row.addWidget(self._empty)
+        self._row.addStretch()
+        self.scroll.setWidget(self._strip)
+        outer.addWidget(self.scroll)
+        self.refresh()
+
+    def refresh(self):
+        """Rebuild the thumbnail buttons from the store, preserving the current selection."""
+        for btn in list(self._group.buttons()):
+            self._group.removeButton(btn)
+            btn.setParent(None)
+            btn.deleteLater()
+
+        entries = self.template_store.all() if self.template_store else []
+        self._empty.setVisible(not entries)
+        for entry in entries:
+            btn = QToolButton()
+            btn.setCheckable(True)
+            btn.setIconSize(QSize(self._THUMB, self._THUMB))
+            btn.setToolTip(entry.name)
+            pm = _b64ToPixmap(entry.image_b64)
+            if not pm.isNull():
+                btn.setIcon(QIcon(pm))
+            btn.setProperty("template_id", entry.id)
+            btn.toggled.connect(lambda checked, tid=entry.id: self._onToggled(checked, tid))
+            self._group.addButton(btn)
+            # Insert before the trailing stretch (last item).
+            self._row.insertWidget(self._row.count() - 1, btn)
+            if entry.id == self._selected_id:
+                btn.setChecked(True)
+
+    def _onToggled(self, checked, tid):
+        if checked and tid != self._selected_id:
+            self._selected_id = tid
+            self.selectionChanged.emit(tid)
+
+    def selectedId(self):
+        return self._selected_id
+
+    def selectId(self, template_id):
+        for btn in self._group.buttons():
+            if btn.property("template_id") == template_id:
+                btn.setChecked(True)
+                return
+        self._selected_id = template_id  # remember even if not rendered yet
+
+    def clearSelection(self):
+        self._group.setExclusive(False)
+        for btn in self._group.buttons():
+            btn.setChecked(False)
+        self._group.setExclusive(True)
+        self._selected_id = None
+        self.selectionChanged.emit(None)
+
+
 def summaryText(cond: WaitCondition) -> str:
     """Human-readable one-liner for a condition, shown in the timeline row."""
     if not isinstance(cond, WaitCondition):
@@ -83,7 +166,7 @@ def summaryText(cond: WaitCondition) -> str:
         # An unset area searches the whole screen rather than being "unknown".
         where = cond.area_var or (GlobalTypeHandler.toString(cond.area) if cond.area is not None else "screen")
         pct = round(cond.threshold * 100)
-        img = "set" if cond.template_b64 else "?"
+        img = "set" if (cond.template_id is not None or cond.template_b64) else "?"
         text = f"Wait until [{where}] image ({img}) {cond.image_match.value} (≥{pct}%)"
     else:  # COLOR
         target = cond.target_var or (GlobalTypeHandler.toString(cond.target) if cond.target is not None else "?")
@@ -97,13 +180,14 @@ def summaryText(cond: WaitCondition) -> str:
 class WaitUntilDialog(QDialog):
     """Modal form for configuring a WaitCondition."""
 
-    def __init__(self, condition: WaitCondition, var_store: "VariableStore", overlay, parent=None):
+    def __init__(self, condition: WaitCondition, var_store: "VariableStore", overlay,
+                 template_store: "TemplateStore" = None, parent=None):
         super().__init__(parent)
         self.var_store = var_store
         self.overlay = overlay
+        self.template_store = template_store
         self._area_literal = None   # QRect / QPoint captured by drawing
         self._color_literal = None  # QColor captured by picking
-        self._template_b64 = None   # base64 PNG captured for an image condition
 
         self.setWindowTitle("Wait Until")
         # Non-modal: drawing the watch area hides this dialog while the capture
@@ -216,12 +300,20 @@ class WaitUntilDialog(QDialog):
         image_page = QWidget()
         image_lay = QVBoxLayout(image_page)
         image_lay.setContentsMargins(0, 0, 0, 0)
-        img_top = QHBoxLayout()
-        self.btn_capture_image = QPushButton("Capture image…")
-        self.lbl_template = QLabel("No image")
-        self.lbl_template.setFixedHeight(40)
-        img_top.addWidget(self.btn_capture_image)
-        img_top.addWidget(self.lbl_template, 1)
+
+        self.gallery = _TemplateGallery(self.template_store)
+
+        add_row = QHBoxLayout()
+        self.btn_capture_image = QPushButton("Capture screen…")
+        self.btn_paste_image = QPushButton("Paste")
+        self.btn_file_image = QPushButton("From file…")
+        self.btn_delete_image = QPushButton("Delete")
+        add_row.addWidget(self.btn_capture_image)
+        add_row.addWidget(self.btn_paste_image)
+        add_row.addWidget(self.btn_file_image)
+        add_row.addStretch()
+        add_row.addWidget(self.btn_delete_image)
+
         img_bottom = QHBoxLayout()
         self.image_match_combo = QComboBox()
         for im in ImageMatch:
@@ -237,7 +329,9 @@ class WaitUntilDialog(QDialog):
         img_bottom.addWidget(self.threshold_spin)
         img_bottom.addWidget(self.btn_test_image)
         img_bottom.addWidget(self.lbl_test, 1)
-        image_lay.addLayout(img_top)
+
+        image_lay.addWidget(self.gallery)
+        image_lay.addLayout(add_row)
         image_lay.addLayout(img_bottom)
 
         # Map condition type -> its comparison page explicitly, so the pages don't
@@ -279,7 +373,11 @@ class WaitUntilDialog(QDialog):
         self.image_match_combo.currentIndexChanged.connect(self._updateStoreEnabled)
         self.btn_draw.clicked.connect(self._drawArea)
         self.btn_pick_color.clicked.connect(self._pickColor)
-        self.btn_capture_image.clicked.connect(self._captureImage)
+        self.btn_capture_image.clicked.connect(self._captureScreen)
+        self.btn_paste_image.clicked.connect(self._pasteClipboard)
+        self.btn_file_image.clicked.connect(self._loadFile)
+        self.btn_delete_image.clicked.connect(self._deleteSelected)
+        self.gallery.selectionChanged.connect(self._onTemplateSelected)
         self.btn_test_image.clicked.connect(self._testImage)
         self.btn_cancel.clicked.connect(self.reject)
         self.btn_save.clicked.connect(self.accept)
@@ -350,16 +448,46 @@ class WaitUntilDialog(QDialog):
             self._color_literal = result
             self._setSwatch(result)
 
-    def _captureImage(self):
-        result = self._captureWithOverlay(CaptureMode.IMAGE)
-        if isinstance(result, QPixmap) and not result.isNull():
-            self._template_b64 = _pixmapToB64(result)
-            self._setThumbnail(result)
-            self.lbl_test.setText("")
+    def _addFromPixmap(self, pixmap):
+        """Save a captured/pasted/loaded image into the library and select it."""
+        if self.template_store is None or not isinstance(pixmap, QPixmap) or pixmap.isNull():
+            return
+        entry = self.template_store.add(_pixmapToB64(pixmap))
+        self.gallery.refresh()
+        self.gallery.selectId(entry.id)
+        self.lbl_test.setText("")
 
-    def _setThumbnail(self, pixmap: QPixmap):
-        self.lbl_template.setPixmap(
-            pixmap.scaledToHeight(40, Qt.TransformationMode.SmoothTransformation))
+    def _captureScreen(self):
+        self._addFromPixmap(self._captureWithOverlay(CaptureMode.IMAGE))
+
+    def _pasteClipboard(self):
+        pixmap = QGuiApplication.clipboard().pixmap()
+        if pixmap.isNull():
+            self.lbl_test.setText("No image in clipboard")
+            return
+        self._addFromPixmap(pixmap)
+
+    def _loadFile(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Choose an image", "", "Images (*.png *.jpg *.jpeg *.bmp *.gif)")
+        if not path:
+            return
+        pixmap = QPixmap(path)
+        if pixmap.isNull():
+            self.lbl_test.setText("Could not load image")
+            return
+        self._addFromPixmap(pixmap)
+
+    def _deleteSelected(self):
+        tid = self.gallery.selectedId()
+        if tid is None or self.template_store is None:
+            return
+        self.template_store.delete(tid)
+        self.gallery.refresh()
+        self.gallery.clearSelection()
+
+    def _onTemplateSelected(self, _tid):
+        self.lbl_test.setText("")
 
     def _imageSearchArea(self) -> QRect | None:
         """The current search bounds (drawn literal or variable value), or None = whole screen."""
@@ -372,12 +500,14 @@ class WaitUntilDialog(QDialog):
 
     def _testImage(self):
         """Run one match against the live screen so the user can tune the threshold."""
-        if not self._template_b64:
-            self.lbl_test.setText("Capture an image first")
+        tid = self.gallery.selectedId()
+        b64 = self.template_store.getB64(tid) if (self.template_store and tid is not None) else None
+        if not b64:
+            self.lbl_test.setText("Select an image first")
             return
         from macro_studio.vision import templateFromB64, findImageCenterFromArray
         try:
-            template = templateFromB64(self._template_b64)
+            template = templateFromB64(b64)
         except ValueError:
             self.lbl_test.setText("Invalid template")
             return
@@ -423,9 +553,15 @@ class WaitUntilDialog(QDialog):
         self.text_mode_combo.setCurrentIndex(self.text_mode_combo.findData(cond.text_mode))
         self.image_match_combo.setCurrentIndex(self.image_match_combo.findData(cond.image_match))
         self.threshold_spin.setValue(round(cond.threshold * 100))
-        if cond.template_b64:
-            self._template_b64 = cond.template_b64
-            self._setThumbnail(_b64ToPixmap(cond.template_b64))
+        # Image template: select the referenced library entry, or migrate a legacy
+        # inline template into the library (deduped) and select that.
+        if self.template_store is not None:
+            if cond.template_id is not None and self.template_store.get(cond.template_id):
+                self.gallery.selectId(cond.template_id)
+            elif cond.template_b64:
+                entry = self.template_store.add(cond.template_b64)
+                self.gallery.refresh()
+                self.gallery.selectId(entry.id)
 
         # Watch area
         if cond.area_var:
@@ -484,7 +620,7 @@ class WaitUntilDialog(QDialog):
             cond.area = self._area_literal
 
         if cond.condition_type == ConditionType.IMAGE:
-            cond.template_b64 = self._template_b64
+            cond.template_id = self.gallery.selectedId()
 
         if cond.condition_type == ConditionType.NUMBER:
             if self.num_target_mode.currentIndex() == _VAR_IDX:
@@ -511,10 +647,11 @@ class WaitUntilEditor(QWidget):
     """Inline summary widget for a WAIT_UNTIL row; opens the dialog on click."""
     valueChanged = Signal(object)
 
-    def __init__(self, parent, prev_value, overlay, var_store):
+    def __init__(self, parent, prev_value, overlay, var_store, template_store=None):
         super().__init__(parent)
         self.overlay = overlay
         self.var_store = var_store
+        self.template_store = template_store
         self.value = prev_value if isinstance(prev_value, WaitCondition) else WaitCondition()
         self._dialog = None
 
@@ -560,7 +697,8 @@ class WaitUntilEditor(QWidget):
             self._dialog.raise_()
             self._dialog.activateWindow()
             return
-        self._dialog = WaitUntilDialog(self.value, self.var_store, self.overlay, self)
+        self._dialog = WaitUntilDialog(self.value, self.var_store, self.overlay,
+                                       self.template_store, parent=self)
         self._dialog.accepted.connect(self._onDialogAccepted)
         self._dialog.show()
         self._dialog.raise_()

@@ -5,6 +5,7 @@ from PySide6.QtCore import QObject, Signal
 
 from .task_store import TaskStore, TaskModel
 from .variable_store import VariableStore, copyVarsToNewProfile
+from .template_store import TemplateStore
 from .database_manager import DatabaseManager
 
 from macro_studio.core.utils import generateUniqueName
@@ -29,6 +30,7 @@ class Profile(QObject):
 
         self.vars = VariableStore(self.db, parent=self)
         self.tasks = TaskStore(self, parent=self)
+        self.templates = TemplateStore(self.db, parent=self)  # global image library
         self.profile_names = set()
 
         self.tasks.taskRemoved.connect(self._onTaskRemoved)
@@ -176,6 +178,7 @@ class Profile(QObject):
                     self.profile_names.add(row["name"])
 
         self.vars.load(self.id)
+        self.templates.load()  # global library; safe to (re)load on every profile switch
         if is_first_load:
             self.tasks.initialLoad()
 

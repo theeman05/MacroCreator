@@ -57,8 +57,12 @@ def _qtLiteralExpr(value):
         return f"QColor({value.red()}, {value.green()}, {value.blue()})"
     return repr(value)
 
-def _waitConditionExport(cond: WaitCondition):
-    """Build (body_lines, import_lines) replicating a WAIT_UNTIL step as exported code."""
+def _waitConditionExport(cond: WaitCondition, template_b64: str | None = None):
+    """Build (body_lines, import_lines) replicating a WAIT_UNTIL step as exported code.
+
+    ``template_b64`` is the resolved image bytes (from the template library or the
+    legacy inline field); the caller resolves it since export has no DB access.
+    """
     imports = []
     poll = cond.poll_interval or DEFAULT_POLL_S
 
@@ -111,8 +115,9 @@ def _waitConditionExport(cond: WaitCondition):
                     "from macro_studio.vision import findImageCenterFromArray"]
         # area_expr is already "None" (whole screen) when no bounds were set.
         check = "if _match is not None:" if cond.image_match != ImageMatch.DISAPPEARS else "if _match is None:"
+        b64 = template_b64 or cond.template_b64 or ""
         lines += [
-            f"    _template = cv2.imdecode(np.frombuffer(base64.b64decode({(cond.template_b64 or '')!r}), np.uint8), cv2.IMREAD_COLOR)",
+            f"    _template = cv2.imdecode(np.frombuffer(base64.b64decode({b64!r}), np.uint8), cv2.IMREAD_COLOR)",
             "    while True:",
             f"        _match = findImageCenterFromArray(_template, {area_expr}, {cond.threshold})",
             f"        {check}",
@@ -143,6 +148,7 @@ class ManualTaskWrapper:
         self.inputs_pending_release = set() # Set of inputs that had a partner
         self.active_solo_inputs = set() # Set of inputs to release upon task completion without partners
         self._template_cache = {}  # base64 -> decoded BGR template (image conditions)
+        self._gallery_cache = {}   # template_id -> base64 (from the template library)
         self.updateModel(model)
 
     def updateModel(self, model: "TaskModel"):
@@ -241,9 +247,33 @@ class ManualTaskWrapper:
     def _resolveTarget(self, cond: WaitCondition):
         return self._resolveVar(cond.target_var) if cond.target_var else cond.target
 
+    def _galleryB64(self, template_id: int):
+        """Resolve a template library id to its base64 image (cached), or None."""
+        if template_id in self._gallery_cache:
+            return self._gallery_cache[template_id]
+        b64 = None
+        try:
+            with self.var_store.db.getConn() as conn:
+                row = conn.execute(
+                    "SELECT image FROM templates WHERE id = ?", (template_id,)).fetchone()
+            if row is not None:
+                b64 = row["image"]
+        except Exception:
+            b64 = None
+        self._gallery_cache[template_id] = b64
+        return b64
+
+    def _templateB64(self, cond: WaitCondition):
+        """The condition's template bytes: prefer the library reference, fall back to legacy inline."""
+        if cond.template_id is not None:
+            b64 = self._galleryB64(cond.template_id)
+            if b64:
+                return b64
+        return cond.template_b64
+
     def _decodeTemplate(self, cond: WaitCondition):
         """Decode (and cache) an image condition's base64 template, or None."""
-        b64 = cond.template_b64
+        b64 = self._templateB64(cond)
         if not b64:
             return None
         template = self._template_cache.get(b64)
@@ -379,7 +409,8 @@ class ManualTaskWrapper:
                 body_lines.append(f"    yield from pasteText({repr(step.value)})")
 
             elif step.action_type == ActionType.WAIT_UNTIL and isinstance(step.value, WaitCondition):
-                wu_lines, wu_imports = _waitConditionExport(step.value)
+                resolved_b64 = self._templateB64(step.value) if step.value.condition_type == ConditionType.IMAGE else None
+                wu_lines, wu_imports = _waitConditionExport(step.value, resolved_b64)
                 body_lines.extend(wu_lines)
                 for imp in wu_imports:
                     if imp not in extra_imports:
