@@ -277,9 +277,12 @@ class ManualTaskWrapper:
         if not isinstance(cond, WaitCondition):
             return
         poll = cond.poll_interval or DEFAULT_POLL_S
+        last_stored = object()  # sentinel: the first real reading always writes
         while True:
             reading = self._readArea(cond, self._resolveArea(cond))
-            self._maybeStore(cond, reading)
+            if reading is not None and reading != last_stored:
+                self._maybeStore(cond, reading)
+                last_stored = reading
             if self._evaluate(cond, reading):
                 return
             yield from taskSleep(poll)
