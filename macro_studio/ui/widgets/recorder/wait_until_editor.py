@@ -74,7 +74,9 @@ class WaitUntilDialog(QDialog):
         self._color_literal = None  # QColor captured by picking
 
         self.setWindowTitle("Wait Until")
-        self.setModal(True)
+        # Non-modal: drawing the watch area hides this dialog while the capture
+        # overlay runs, and a modal exec() loop would end the moment it hides.
+        self.setModal(False)
         self.setMinimumWidth(340)
 
         root = QVBoxLayout(self)
@@ -244,24 +246,29 @@ class WaitUntilDialog(QDialog):
             self.swatch.setStyleSheet("background:transparent; border:1px dashed #555; border-radius:4px;")
 
     def _onTypeChanged(self):
-        ct = self.type_combo.currentData()
+        ct = ConditionType(self.type_combo.currentData())
         self.cmp_stack.setCurrentIndex(self._cmp_index[ct])
         self._fillVarCombo(self.area_var_combo, _AREA_TYPES[ct])
 
-    def _drawArea(self):
-        ct = self.type_combo.currentData()
-        mode = CaptureMode.POINT if ct == ConditionType.COLOR else CaptureMode.REGION
+    def _captureWithOverlay(self, mode):
+        """Hide the dialog, run the capture overlay, then restore the dialog."""
         self.hide()
         result = self.overlay.captureData(mode)
         self.show()
+        self.raise_()
+        self.activateWindow()
+        return result
+
+    def _drawArea(self):
+        ct = ConditionType(self.type_combo.currentData())
+        mode = CaptureMode.POINT if ct == ConditionType.COLOR else CaptureMode.REGION
+        result = self._captureWithOverlay(mode)
         if result is not None:
             self._area_literal = result
             self.lbl_area.setText(GlobalTypeHandler.toString(result))
 
     def _pickColor(self):
-        self.hide()
-        result = self.overlay.captureData(CaptureMode.COLOR)
-        self.show()
+        result = self._captureWithOverlay(CaptureMode.COLOR)
         if isinstance(result, QColor):
             self._color_literal = result
             self._setSwatch(result)
@@ -316,9 +323,10 @@ class WaitUntilDialog(QDialog):
 
     def resultCondition(self) -> WaitCondition:
         cond = WaitCondition()
-        cond.condition_type = self.type_combo.currentData()
-        cond.operator = self.op_combo.currentData()
-        cond.text_mode = self.text_mode_combo.currentData()
+        # QComboBox returns str-Enum userData as a plain str; coerce back to the enum.
+        cond.condition_type = ConditionType(self.type_combo.currentData())
+        cond.operator = CompareOp(self.op_combo.currentData())
+        cond.text_mode = TextMatch(self.text_mode_combo.currentData())
         cond.tolerance = self.tol_spin.value()
 
         if self.area_mode.currentIndex() == _VAR_IDX:
@@ -356,6 +364,7 @@ class WaitUntilEditor(QWidget):
         self.overlay = overlay
         self.var_store = var_store
         self.value = prev_value if isinstance(prev_value, WaitCondition) else WaitCondition()
+        self._dialog = None
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -377,9 +386,18 @@ class WaitUntilEditor(QWidget):
         self._refresh()
 
     def _openDialog(self):
-        dialog = WaitUntilDialog(self.value, self.var_store, self.overlay, self)
-        if dialog.exec():
-            new_cond = dialog.resultCondition()
-            self.value = new_cond
-            self._refresh()
-            self.valueChanged.emit(new_cond)
+        if self._dialog is not None and self._dialog.isVisible():
+            self._dialog.raise_()
+            self._dialog.activateWindow()
+            return
+        self._dialog = WaitUntilDialog(self.value, self.var_store, self.overlay, self)
+        self._dialog.accepted.connect(self._onDialogAccepted)
+        self._dialog.show()
+        self._dialog.raise_()
+        self._dialog.activateWindow()
+
+    def _onDialogAccepted(self):
+        new_cond = self._dialog.resultCondition()
+        self.value = new_cond
+        self._refresh()
+        self.valueChanged.emit(new_cond)
