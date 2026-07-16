@@ -405,12 +405,10 @@ class WaitUntilEditor(QWidget):
         area = self._watchArea()
         if area is not None:
             self.overlay.trySetHighlighted(area)
-            self.overlay.raise_()  # the overlay sits below the main window by default
         super().enterEvent(event)
 
     def leaveEvent(self, event):
         self.overlay.removeHighlightedData()
-        self.overlay.lower()
         super().leaveEvent(event)
 
     def _openDialog(self):
