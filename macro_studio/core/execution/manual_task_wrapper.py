@@ -1,6 +1,6 @@
 import pydirectinput, re
 from typing import TYPE_CHECKING
-from PySide6.QtCore import QPoint
+from PySide6.QtCore import QPoint, QRect
 from PySide6.QtGui import QColor
 
 from macro_studio.core.types_and_enums import TaskInterruptedException
@@ -46,6 +46,71 @@ _COMPARATORS = {
     CompareOp.GTE: lambda a, b: a >= b,
     CompareOp.LTE: lambda a, b: a <= b,
 }
+
+def _qtLiteralExpr(value):
+    """Source text that reconstructs a QRect/QPoint/QColor literal for exported code."""
+    if isinstance(value, QRect):
+        return f"QRect({value.x()}, {value.y()}, {value.width()}, {value.height()})"
+    if isinstance(value, QPoint):
+        return f"QPoint({value.x()}, {value.y()})"
+    if isinstance(value, QColor):
+        return f"QColor({value.red()}, {value.green()}, {value.blue()})"
+    return repr(value)
+
+def _waitConditionExport(cond: WaitCondition):
+    """Build (body_lines, import_lines) replicating a WAIT_UNTIL step as exported code."""
+    imports = []
+    poll = cond.poll_interval or DEFAULT_POLL_S
+
+    if cond.area_var:
+        area_expr = f"controller.getVar({cond.area_var!r})"
+    else:
+        area_expr = _qtLiteralExpr(cond.area)
+        if isinstance(cond.area, QRect):
+            imports.append("from PySide6.QtCore import QRect")
+        elif isinstance(cond.area, QPoint):
+            imports.append("from PySide6.QtCore import QPoint")
+
+    lines = []
+    if cond.condition_type == ConditionType.NUMBER:
+        imports += ["import re", "from macro_studio.vision import captureScreenText"]
+        target_expr = f"controller.getVar({cond.target_var!r})" if cond.target_var else repr(cond.target)
+        lines += [
+            "    while True:",
+            f'        _m = re.search(r"-?\\d+(?:\\.\\d+)?", captureScreenText({area_expr}))',
+            f"        if _m and float(_m.group()) {cond.operator.value} {target_expr}:",
+            "            break",
+            f"        yield from taskSleep({poll})",
+        ]
+    elif cond.condition_type == ConditionType.TEXT:
+        imports.append("from macro_studio.vision import captureScreenText")
+        target_expr = (f"str(controller.getVar({cond.target_var!r}))"
+                       if cond.target_var else repr(cond.target or ""))
+        if cond.text_mode == TextMatch.EQUALS:
+            check = f"if captureScreenText({area_expr}).strip().lower() == {target_expr}.strip().lower():"
+        else:
+            check = f"if {target_expr}.lower() in captureScreenText({area_expr}).lower():"
+        lines += ["    while True:", f"        {check}", "            break",
+                  f"        yield from taskSleep({poll})"]
+    elif cond.condition_type == ConditionType.COLOR:
+        imports.append("from macro_studio.vision import captureScreenColor, isColorSimilar")
+        if cond.target_var:
+            target_expr = f"controller.getVar({cond.target_var!r})"
+        else:
+            target_expr = _qtLiteralExpr(cond.target)
+            if isinstance(cond.target, QColor):
+                imports.append("from PySide6.QtGui import QColor")
+        lines += [
+            "    while True:",
+            f"        if isColorSimilar(captureScreenColor({area_expr}), {target_expr}, {cond.tolerance}):",
+            "            break",
+            f"        yield from taskSleep({poll})",
+        ]
+
+    if cond.store_var:
+        lines.insert(0, f"    # Reading was also stored into variable {cond.store_var!r} in the recorder.")
+
+    return lines, imports
 
 def _isPress(step):
     return step.detail == 1
@@ -250,6 +315,7 @@ class ManualTaskWrapper:
 
         body_lines = []
         vars_to_fetch = set()
+        extra_imports = []
 
         for step in self.steps:
             if step.action_type == ActionType.DELAY:
@@ -257,6 +323,13 @@ class ManualTaskWrapper:
 
             elif step.action_type == ActionType.TEXT:
                 body_lines.append(f"    yield from pasteText({repr(step.value)})")
+
+            elif step.action_type == ActionType.WAIT_UNTIL and isinstance(step.value, WaitCondition):
+                wu_lines, wu_imports = _waitConditionExport(step.value)
+                body_lines.extend(wu_lines)
+                for imp in wu_imports:
+                    if imp not in extra_imports:
+                        extra_imports.append(imp)
 
             elif step.action_type == ActionType.KEYBOARD:
                 key = step.value
@@ -293,6 +366,10 @@ class ManualTaskWrapper:
 
         if not body_lines:
             body_lines.append("    pass")
+
+        # Splice any WAIT_UNTIL imports into the header, above the blank line and def.
+        if extra_imports:
+            lines[2:2] = extra_imports
 
         lines.extend(body_lines)
         return "\n".join(lines)
