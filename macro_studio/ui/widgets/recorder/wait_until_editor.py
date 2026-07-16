@@ -374,6 +374,8 @@ class WaitUntilEditor(QWidget):
         self.value = prev_value if isinstance(prev_value, WaitCondition) else WaitCondition()
         self._dialog = None
 
+        self.setMouseTracking(True)
+
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -392,6 +394,22 @@ class WaitUntilEditor(QWidget):
     def setValue(self, new_value):
         self.value = new_value if isinstance(new_value, WaitCondition) else WaitCondition()
         self._refresh()
+
+    def _watchArea(self):
+        """The highlightable watch area: a variable name (str) or a literal QRect/QPoint."""
+        if not isinstance(self.value, WaitCondition):
+            return None
+        return self.value.area_var or self.value.area
+
+    def enterEvent(self, event):
+        area = self._watchArea()
+        if area is not None:
+            self.overlay.trySetHighlighted(area)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.overlay.removeHighlightedData()
+        super().leaveEvent(event)
 
     def _openDialog(self):
         if self._dialog is not None and self._dialog.isVisible():
