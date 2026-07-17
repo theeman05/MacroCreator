@@ -1,0 +1,359 @@
+<title>Ideation: Macro Studio — Open Directions</title>
+<style>
+  :root {
+    --bg: #fbfaf8;
+    --surface: #ffffff;
+    --surface-2: #f4f2ee;
+    --ink: #23201b;
+    --ink-soft: #5c574e;
+    --ink-faint: #8a8375;
+    --border: #e5e0d7;
+    --border-strong: #d3ccbf;
+    --accent: #b5651d;
+    --accent-soft: #f7ecdd;
+    --accent-text: #8a4a12;
+    --good: #3f7d4e;
+    --good-soft: #e8f2e9;
+    --warn: #b07a12;
+    --warn-soft: #f6eed6;
+    --info: #3a6ea5;
+    --info-soft: #e6eef7;
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+    --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17150f;
+      --surface: #201d16;
+      --surface-2: #262218;
+      --ink: #ece6da;
+      --ink-soft: #b3ab9b;
+      --ink-faint: #857e6f;
+      --border: #332e23;
+      --border-strong: #423b2c;
+      --accent: #e0913f;
+      --accent-soft: #34281a;
+      --accent-text: #edad63;
+      --good: #74b283;
+      --good-soft: #1f2c22;
+      --warn: #d5a63e;
+      --warn-soft: #2e2716;
+      --info: #7ba7d6;
+      --info-soft: #1b2530;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17150f; --surface: #201d16; --surface-2: #262218; --ink: #ece6da;
+    --ink-soft: #b3ab9b; --ink-faint: #857e6f; --border: #332e23; --border-strong: #423b2c;
+    --accent: #e0913f; --accent-soft: #34281a; --accent-text: #edad63; --good: #74b283;
+    --good-soft: #1f2c22; --warn: #d5a63e; --warn-soft: #2e2716; --info: #7ba7d6; --info-soft: #1b2530;
+  }
+  :root[data-theme="light"] {
+    --bg: #fbfaf8; --surface: #ffffff; --surface-2: #f4f2ee; --ink: #23201b;
+    --ink-soft: #5c574e; --ink-faint: #8a8375; --border: #e5e0d7; --border-strong: #d3ccbf;
+    --accent: #b5651d; --accent-soft: #f7ecdd; --accent-text: #8a4a12; --good: #3f7d4e;
+    --good-soft: #e8f2e9; --warn: #b07a12; --warn-soft: #f6eed6; --info: #3a6ea5; --info-soft: #e6eef7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); line-height: 1.6;
+    font-feature-settings: "kern", "liga", "calt";
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 940px; margin-inline: auto; padding: 3rem 1.5rem 5rem; }
+  .prose { max-width: 72ch; }
+  header.doc-head { border-bottom: 1px solid var(--border); padding-bottom: 1.5rem; margin-bottom: 2rem; }
+  .eyebrow { font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: var(--accent-text); font-weight: 600; }
+  h1 { font-size: 2.1rem; line-height: 1.15; margin: .3rem 0 .6rem; letter-spacing: -.02em; }
+  h2 { font-size: 1.4rem; margin: 2.8rem 0 1rem; letter-spacing: -.01em; padding-top: .4rem; }
+  h3 { font-size: 1.15rem; margin: 0; letter-spacing: -.01em; }
+  p { margin: .7rem 0; }
+  a { color: var(--accent-text); text-decoration-color: var(--border-strong); text-underline-offset: 2px; }
+  code { font-family: var(--mono); font-size: .85em; background: var(--surface-2); padding: .1em .38em; border-radius: 4px; border: 1px solid var(--border); }
+  .meta { display: flex; flex-wrap: wrap; gap: .5rem 1.4rem; font-size: .85rem; color: var(--ink-soft); margin-top: .8rem; }
+  .meta b { color: var(--ink); font-weight: 600; }
+  .lead { font-size: 1.05rem; color: var(--ink-soft); }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: .75rem; margin: 1.6rem 0; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: .8rem 1rem; }
+  .stat .n { font-size: 1.5rem; font-weight: 700; letter-spacing: -.02em; }
+  .stat .l { font-size: .74rem; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-faint); margin-top: .15rem; }
+
+  section.ground { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.3rem 1.5rem; }
+  section.ground h2 { margin-top: 0; }
+  .ground ul { margin: .5rem 0; padding-left: 1.1rem; }
+  .ground li { margin: .35rem 0; }
+
+  .axes-note { font-style: italic; color: var(--ink-soft); background: var(--surface-2); border: 1px dashed var(--border-strong); border-radius: 8px; padding: .6rem .9rem; display: inline-block; }
+
+  .jump { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: .9rem 1.2rem; margin: 1rem 0 2rem; }
+  .jump ol { margin: .3rem 0 0; padding-left: 1.3rem; columns: 2; column-gap: 2rem; }
+  .jump li { margin: .2rem 0; break-inside: avoid; }
+  .jump a { text-decoration: none; }
+  @media (max-width: 620px) { .jump ol { columns: 1; } }
+
+  article.idea { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 1.4rem 1.6rem; margin: 1.2rem 0; }
+  article.idea:target { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .idea-head { display: flex; align-items: baseline; gap: .7rem; margin-bottom: .2rem; }
+  .rank { font-family: var(--mono); font-weight: 700; color: var(--accent-text); font-size: 1rem; flex: none; }
+  .chips { display: flex; flex-wrap: wrap; gap: .4rem; margin: .7rem 0 1rem; }
+  .chip { font-size: .72rem; font-weight: 600; padding: .22em .6em; border-radius: 999px; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink-soft); letter-spacing: .02em; }
+  .chip.hi { background: var(--good-soft); color: var(--good); border-color: transparent; }
+  .chip.md { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+  .chip.cx { background: var(--info-soft); color: var(--info); border-color: transparent; }
+  .idea dl { display: grid; grid-template-columns: max-content 1fr; gap: .4rem 1rem; margin: .8rem 0 0; }
+  .idea dt { font-size: .72rem; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-faint); font-weight: 600; padding-top: .15rem; }
+  .idea dd { margin: 0; }
+  .basis { font-size: .92rem; }
+  .basis .tag { font-family: var(--mono); font-size: .78rem; font-weight: 700; padding: .05em .4em; border-radius: 4px; margin-right: .35em; }
+  .tag.direct { background: var(--good-soft); color: var(--good); }
+  .tag.external { background: var(--info-soft); color: var(--info); }
+  .tag.reasoned { background: var(--warn-soft); color: var(--warn); }
+  .fig { margin: 1.1rem 0 .2rem; padding: .9rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; overflow-x: auto; }
+  .fig svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+  .fig figcaption { font-size: .8rem; color: var(--ink-faint); margin-top: .5rem; text-align: center; }
+
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: .92rem; }
+  th, td { text-align: left; padding: .55rem .7rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { font-size: .74rem; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-faint); }
+  td.num { font-family: var(--mono); color: var(--ink-faint); white-space: nowrap; }
+
+  footer.composition-signal { margin-top: 3.5rem; padding-top: 1.2rem; border-top: 1px solid var(--border); font-size: .8rem; color: var(--ink-faint); }
+  footer code { font-size: .82em; }
+
+  .svg-ink { fill: var(--ink); }
+  .svg-soft { fill: var(--ink-soft); }
+  .svg-faint { fill: var(--ink-faint); }
+  .svg-box { fill: var(--surface); stroke: var(--border-strong); }
+  .svg-accent { fill: var(--accent-soft); stroke: var(--accent); }
+  .svg-good { fill: var(--good-soft); stroke: var(--good); }
+  .svg-info { fill: var(--info-soft); stroke: var(--info); }
+  .svg-warn { fill: var(--warn-soft); stroke: var(--warn); }
+  .svg-stroke { stroke: var(--border-strong); }
+  .svg-astroke { stroke: var(--accent); }
+  text { font-family: var(--sans); }
+</style>
+
+<div class="wrap">
+<header class="doc-head">
+  <div class="eyebrow">Ideation · Surprise-me</div>
+  <h1>Macro Studio — Open Directions</h1>
+  <p class="lead prose">Seven ranked directions for a Windows desktop-automation framework built on a cooperative generator-scheduler engine — surfaced by scanning the codebase and the automation-tooling landscape, then critiqued down from ~25 raw candidates.</p>
+  <div class="meta">
+    <span><b>Date</b> 2026-07-15</span>
+    <span><b>Topic</b> open-ideation</span>
+    <span><b>Mode</b> repo-grounded</span>
+    <span><b>Focus</b> open-ended (surprise-me)</span>
+  </div>
+</header>
+
+<div class="stats">
+  <div class="stat"><div class="n">7</div><div class="l">Ranked ideas</div></div>
+  <div class="stat"><div class="n">~25</div><div class="l">Raw candidates</div></div>
+  <div class="stat"><div class="n">11</div><div class="l">Cut / folded</div></div>
+  <div class="stat"><div class="n">9/11</div><div class="l">Bases verified</div></div>
+</div>
+
+<section class="ground">
+  <h2>Codebase Context</h2>
+  <p>Macro Studio is a Windows-only Python + PySide6 automation framework. Its distinctive core is a <b>cooperative scheduler</b>: user "tasks" are Python generators driven by a single <code>TaskWorker</code> QThread over a time-ordered heap — a task that <code>yield</code>s a float sleeps that long without blocking others (<code>core/execution/task_worker.py</code>). It supports soft vs. hard (interrupt) pause, threaded tasks for blocking work, exclusive solo mode, and a deadlock watchdog. Users author tasks in code or record mouse/keyboard sequences via the GUI. Vision is <code>mss</code> + OpenCV + Tesseract. Persistence is SQLite. Input uses <code>pydirectinput</code> scan codes so games register it.</p>
+  <ul>
+    <li><b>Crown jewel:</b> the scheduler is intricate, mature — and <b>entirely untested</b> (no pytest/unittest anywhere; <code>test/</code> is manual macros).</li>
+    <li><b>Real defects found:</b> an infinite-recursion <code>repeat_delay</code> property (<code>task_manager.py:80-86</code>); a fresh <code>mss.mss()</code> context created on every capture/pixel poll (<code>vision.py:36,64,133</code>) despite the "raw hardware speed" pitch.</li>
+    <li><b>Extension points already in place:</b> a type registry (<code>@register_handler</code> / <code>GlobalTypeHandler</code>) with <code>CaptureMode</code> overlay capture for Point/Region/Color; a recorder producing <code>TimelineStep</code> sequences with Python export; a profile/task/variable DB model.</li>
+    <li><b>Landscape signal:</b> comparable tools (Playwright, Power Automate Desktop, AutoHotkey, SikuliX) point hard at two openings — <i>flight-recorder-style debugging</i> of a running automation, and <i>resilience</i> to screen/DPI/layout change (the #1 image-automation complaint).</li>
+  </ul>
+</section>
+
+<h2>Topic Axes</h2>
+<p><span class="axes-note">Decomposition skipped — surprise-me mode. Ideas span the whole project by design; cross-cutting convergence (below) is the coverage mechanism.</span></p>
+
+<h2>Ranked Ideas</h2>
+<nav class="jump" aria-label="Idea index">
+  <b style="font-size:.8rem; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-faint)">Jump to</b>
+  <ol>
+    <li><a href="#i1">Step-boundary flight recorder</a></li>
+    <li><a href="#i2">Deterministic scheduler test harness</a></li>
+    <li><a href="#i3">Resilient targeting (multi-anchor Target)</a></li>
+    <li><a href="#i4">Recorder → assertion-based timeline</a></li>
+    <li><a href="#i5">Headless runner + triggers</a></li>
+    <li><a href="#i6">Task/profile share &amp; import</a></li>
+    <li><a href="#i7">Foundation-hardening bundle</a></li>
+  </ol>
+</nav>
+
+<article class="idea" id="i1">
+  <div class="idea-head"><span class="rank">1.</span><h3>Step-boundary "flight recorder" &amp; trace viewer</h3></div>
+  <div class="chips"><span class="chip hi">Confidence 85%</span><span class="chip cx">Complexity High</span><span class="chip">DX · Observability</span><span class="chip">Differentiator</span></div>
+  <p>The scheduler already stops every task at a clean, discrete boundary each time it <code>yield</code>s. Hook that boundary to record a lightweight frame — timestamp, which task, the line it yielded on, active variable values, and (optionally) a downscaled screenshot — into a ring buffer. Add a "trace viewer" panel that lets you scrub a completed or failed run step-by-step: what the screen looked like, what the automation believed, and where it diverged.</p>
+
+  <figure class="fig">
+    <svg viewBox="0 0 720 220" role="img" aria-label="Diagram: each scheduler yield emits a trace frame onto a scrubbable timeline">
+      <text x="12" y="24" class="svg-soft" font-size="12" font-weight="600">TaskWorker heap loop</text>
+      <!-- loop boxes -->
+      <rect x="12" y="36" width="120" height="40" rx="7" class="svg-box"/>
+      <text x="72" y="61" text-anchor="middle" class="svg-ink" font-size="12">next(controller)</text>
+      <path d="M132 56 H176" class="svg-stroke" fill="none" stroke-width="1.5" marker-end="url(#ah1)"/>
+      <rect x="176" y="36" width="120" height="40" rx="7" class="svg-accent"/>
+      <text x="236" y="56" text-anchor="middle" class="svg-ink" font-size="12">yield d</text>
+      <text x="236" y="70" text-anchor="middle" class="svg-soft" font-size="10">(step boundary)</text>
+      <path d="M296 56 H340" class="svg-stroke" fill="none" stroke-width="1.5" marker-end="url(#ah1)"/>
+      <rect x="340" y="36" width="150" height="40" rx="7" class="svg-box"/>
+      <text x="415" y="61" text-anchor="middle" class="svg-ink" font-size="12">reschedule t+d</text>
+      <path d="M415 76 C415 96, 236 96, 236 78" class="svg-stroke" fill="none" stroke-width="1.3" marker-end="url(#ah1)"/>
+
+      <!-- tap down to recorder -->
+      <path d="M236 78 V116" class="svg-astroke" fill="none" stroke-width="1.6" stroke-dasharray="4 3" marker-end="url(#ah2)"/>
+      <text x="248" y="102" class="svg-faint" font-size="10">emit frame</text>
+
+      <!-- timeline -->
+      <text x="12" y="140" class="svg-soft" font-size="12" font-weight="600">Trace timeline (scrub)</text>
+      <line x1="14" y1="176" x2="706" y2="176" class="svg-stroke" stroke-width="2"/>
+      <g>
+        <rect x="30" y="158" width="30" height="36" rx="4" class="svg-good"/>
+        <rect x="120" y="158" width="30" height="36" rx="4" class="svg-good"/>
+        <rect x="210" y="158" width="30" height="36" rx="4" class="svg-good"/>
+        <rect x="300" y="158" width="30" height="36" rx="4" class="svg-warn"/>
+        <rect x="390" y="158" width="30" height="36" rx="4" class="svg-good"/>
+        <rect x="480" y="158" width="30" height="36" rx="4" class="svg-good"/>
+        <rect x="570" y="158" width="30" height="36" rx="4" class="svg-accent"/>
+      </g>
+      <text x="315" y="212" text-anchor="middle" class="svg-faint" font-size="10">vision miss</text>
+      <text x="585" y="212" text-anchor="middle" class="svg-faint" font-size="10">failed here</text>
+      <defs>
+        <marker id="ah1" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="var(--border-strong)"/></marker>
+        <marker id="ah2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="var(--accent)"/></marker>
+      </defs>
+    </svg>
+    <figcaption>Every yield is already a natural checkpoint — the recorder taps it rather than instrumenting task code.</figcaption>
+  </figure>
+
+  <dl>
+    <dt>Basis</dt><dd class="basis"><span class="tag direct">direct</span> <code>task_worker.py:250-257</code> — <code>wait_duration = next(controller)</code>, reschedule at <code>current_time + wait_duration</code>: a discrete per-step boundary confirmed in the run loop. <span class="tag external">external</span> Playwright <b>Trace Viewer</b> (per-action DOM snapshot + before/after screenshots + time-travel scrubbing) is the most-praised debugging UX in the automation-authoring space.</dd>
+    <dt>Rationale</dt><dd>Debuggability is the biggest gap in scripting-style automation tools (AutoHotkey's weak debugging is a recurring complaint). Macro Studio has a structural advantage nobody else here has for free: cooperative yields <i>are</i> the trace points. A flight recorder turns "it stopped working, no idea why" into a scrubbable replay — the single most differentiating direction in the set.</dd>
+    <dt>Downsides</dt><dd>Screenshot capture per step has cost/storage implications (mitigate: downscale, ring-buffer, make screenshots opt-in per task). Capturing locals cleanly across generator frames needs care. UI surface is non-trivial.</dd>
+  </dl>
+</article>
+
+<article class="idea" id="i2">
+  <div class="idea-head"><span class="rank">2.</span><h3>Deterministic scheduler test harness</h3></div>
+  <div class="chips"><span class="chip hi">Confidence 88%</span><span class="chip cx">Complexity Medium</span><span class="chip">Reliability · Leverage</span></div>
+  <p>Build a virtual-clock + fake-input test rig for the engine so the heap ordering, soft/hard pause, <code>_generation</code> invalidation, solo-lock, and watchdog logic can be unit-tested without real time or real input. Tasks become deterministic: advance the clock, assert wake order and state transitions.</p>
+  <dl>
+    <dt>Basis</dt><dd class="basis"><span class="tag direct">direct</span> Repo-wide search finds no <code>pytest</code>/<code>unittest</code>/<code>def test_</code>; <code>test/my_tester.py</code> is a manual macro. The most intricate, correctness-critical code in the project (the pause/generation state machine per <code>CLAUDE.md</code>) has zero automated coverage. <span class="tag reasoned">reasoned</span> A virtual clock is the standard way to make time-ordered schedulers testable; the engine's own <code>yield</code>-a-duration contract already abstracts wall-clock time, so injecting a fake clock is a small seam.</dd>
+    <dt>Rationale</dt><dd>This is the highest-leverage reliability investment: it de-risks every other idea here (a flight recorder, self-healing targeting, and hardening fixes all touch the engine), and turns the "crown jewel" from a change-at-your-peril black box into something you can refactor confidently.</dd>
+    <dt>Downsides</dt><dd>Requires threading the clock/input as injectable seams — some refactoring of currently-hardcoded <code>time</code>/input calls. No user-visible payoff on its own, so it competes with feature work for attention.</dd>
+  </dl>
+</article>
+
+<article class="idea" id="i3">
+  <div class="idea-head"><span class="rank">3.</span><h3>Resilient targeting: multi-anchor "Target" type + self-healing</h3></div>
+  <div class="chips"><span class="chip hi">Confidence 82%</span><span class="chip cx">Complexity High</span><span class="chip">Reliability · Feature</span></div>
+  <p>Introduce a first-class <code>Target</code> type (registered on the existing type system) that stores <i>several</i> ways to find the same on-screen thing — a template image, an OCR text label, a bounding region, an anchor color — and resolves at runtime by trying them in order with confidence thresholds. On a miss, fall back to the next anchor (or multi-scale matching) and re-anchor the coordinate rather than failing the whole task.</p>
+
+  <figure class="fig">
+    <svg viewBox="0 0 700 200" role="img" aria-label="Diagram: a Target resolves through a fallback chain of image, multi-scale, OCR, and region anchors">
+      <rect x="14" y="70" width="120" height="52" rx="9" class="svg-accent"/>
+      <text x="74" y="92" text-anchor="middle" class="svg-ink" font-size="13" font-weight="600">Target</text>
+      <text x="74" y="109" text-anchor="middle" class="svg-soft" font-size="10">resolve()</text>
+
+      <!-- chain -->
+      <g font-size="11">
+        <rect x="180" y="20" width="130" height="40" rx="8" class="svg-good"/>
+        <text x="245" y="44" text-anchor="middle" class="svg-ink">image match</text>
+        <rect x="180" y="80" width="130" height="40" rx="8" class="svg-box"/>
+        <text x="245" y="104" text-anchor="middle" class="svg-ink">multi-scale</text>
+        <rect x="180" y="140" width="130" height="40" rx="8" class="svg-box"/>
+        <text x="245" y="164" text-anchor="middle" class="svg-ink">OCR text</text>
+        <rect x="360" y="110" width="130" height="40" rx="8" class="svg-box"/>
+        <text x="425" y="134" text-anchor="middle" class="svg-ink">region + color</text>
+      </g>
+
+      <path d="M134 88 H180 M134 96 C150 96 160 100 180 100 M134 100 C150 108 160 140 180 158" class="svg-stroke" fill="none" stroke-width="1.4"/>
+      <text x="322" y="14" class="svg-faint" font-size="10">on miss ↓ try next</text>
+      <path d="M310 40 C335 40 335 100 360 122" class="svg-warn" fill="none" stroke-width="1.4" stroke-dasharray="4 3"/>
+      <path d="M310 100 C335 100 335 118 360 128" class="svg-warn" fill="none" stroke-width="1.4" stroke-dasharray="4 3"/>
+
+      <rect x="540" y="110" width="140" height="40" rx="8" class="svg-good"/>
+      <text x="610" y="130" text-anchor="middle" class="svg-ink" font-size="11">coordinate</text>
+      <text x="610" y="144" text-anchor="middle" class="svg-soft" font-size="9">(re-anchored)</text>
+      <path d="M490 130 H540" class="svg-stroke" fill="none" stroke-width="1.5" marker-end="url(#ah3)"/>
+      <defs><marker id="ah3" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="var(--border-strong)"/></marker></defs>
+    </svg>
+    <figcaption>One target, several anchors, tried in order — the automation degrades gracefully instead of breaking on the first layout shift.</figcaption>
+  </figure>
+
+  <dl>
+    <dt>Basis</dt><dd class="basis"><span class="tag direct">direct</span> The type registry (<code>type_handler.py:201</code>, <code>@register_handler</code>) and <code>CaptureMode</code> (POINT/REGION/COLOR overlay capture, <code>types_and_enums.py:11-14</code>) already exist — a composite <code>Target</code> is a natural addition on this seam, not a new subsystem. <span class="tag external">external</span> Power Automate Desktop ships runtime "self-healing" (re-finds a changed element); SikuliX's well-documented failure mode is that single-image matching breaks on resolution/scale/layout change — the exact fragility Macro Studio's OpenCV matching inherits today.</dd>
+    <dt>Rationale</dt><dd>Fragility to screen/DPI/layout change is the #1 complaint in image-based automation. Storing redundant anchors and degrading gracefully is what separates a toy record-replay from something that survives a game patch or a window move — and it slots directly onto infrastructure the project already has.</dd>
+    <dt>Downsides</dt><dd>Capturing multiple anchors adds authoring friction (mitigate via the overlay capture flow). Ordering/threshold heuristics need tuning. OCR anchors depend on Tesseract being present (see idea 7).</dd>
+  </dl>
+</article>
+
+<article class="idea" id="i4">
+  <div class="idea-head"><span class="rank">4.</span><h3>Recorder → editable, assertion-based timeline</h3></div>
+  <div class="chips"><span class="chip hi">Confidence 80%</span><span class="chip cx">Complexity Medium</span><span class="chip">Authoring · UX</span></div>
+  <p>Let a recorded sequence be <i>refined</i>, not just replayed: edit steps, and insert <b>wait-until</b> vision assertions ("wait until this image/text appears") in place of the brittle fixed sleeps that recordings bake in. Pairs naturally with the <code>Target</code> type (idea 3) as the thing an assertion waits on.</p>
+  <dl>
+    <dt>Basis</dt><dd class="basis"><span class="tag direct">direct</span> The recorder already produces <code>TimelineStep</code> sequences (<code>timeline_handler.py:33</code>) and exports to standalone Python — the editable-model substrate exists. <span class="tag external">external</span> Pulover's Macro Creator's whole value over TinyTask is that recorded rows are <i>editable</i>; Playwright's codegen inserts <i>auto-assertions</i> rather than raw waits. Both are proven patterns.</dd>
+    <dt>Rationale</dt><dd>Fixed sleeps are the most common reason recorded macros are flaky and slow — too short and they race, too long and they waste time. Assertion-based waits make recordings both faster and more robust, and turn the recorder from a novelty into a real authoring path that graduates into editable code.</dd>
+    <dt>Downsides</dt><dd>A step-editing UI is real surface area. Assertion capture needs the overlay flow. Overlaps idea 3 — best sequenced after (or with) it.</dd>
+  </dl>
+</article>
+
+<article class="idea" id="i5">
+  <div class="idea-head"><span class="rank">5.</span><h3>Headless runner + triggers</h3></div>
+  <div class="chips"><span class="chip md">Confidence 68%</span><span class="chip cx">Complexity Medium</span><span class="chip">Feature · Reach</span></div>
+  <p>Run tasks without the GUI, started by triggers rather than a human pressing F6: a schedule (cron-like), a global hotkey, or a screen-state condition ("when this image/color/text appears, run task X"). Turns Macro Studio from an interactive tool into something that can run unattended.</p>
+  <dl>
+    <dt>Basis</dt><dd class="basis"><span class="tag reasoned">reasoned</span> Constraint flip — "what if there were no GUI?" The engine (<code>MacroStudio</code>/<code>TaskWorker</code>) is already decoupled from the UI via Qt signals per <code>CLAUDE.md</code>, so a headless driver is mostly a new entry point plus a trigger loop, not an engine rewrite. Screen-state triggers reuse the vision stack. <span class="tag external">external</span> Pulover's Macro Creator's built-in scheduler (run-on-startup) is a headline feature; event-driven "run when X appears" is standard in RPA.</dd>
+    <dt>Rationale</dt><dd>Unattended operation is a category expansion — ergonomic auto-toggles, watchers, and scheduled chores are common real-world drivers that the current human-in-the-loop model can't serve. It also unlocks the value of idea 6 (a shared task is far more useful if it can run on a trigger).</dd>
+    <dt>Downsides</dt><dd>Screen-state polling has a cost/latency budget; needs the cached-capture fix (idea 7) to be cheap. Unattended runs raise the stakes on reliability (leans on ideas 2 and 3). Trigger config is new UI.</dd>
+  </dl>
+</article>
+
+<article class="idea" id="i6">
+  <div class="idea-head"><span class="rank">6.</span><h3>Task/profile share &amp; import format</h3></div>
+  <div class="chips"><span class="chip md">Confidence 66%</span><span class="chip cx">Complexity Medium</span><span class="chip">Distribution · Compounding</span></div>
+  <p>A portable export/import format bundling a task (or profile) with its variables and captured targets, so users can share automations — and optionally a one-click "compile to standalone <code>.exe</code>" for install-free distribution.</p>
+  <dl>
+    <dt>Basis</dt><dd class="basis"><span class="tag direct">direct</span> The DB already models profiles, tasks, per-relationship <code>repeat</code>/<code>is_enabled</code>, and per-profile variables (<code>database_manager.py</code>) — the export unit is well-defined. A PyInstaller spec already exists for the <code>.exe</code> path. <span class="tag external">external</span> AutoHotkey's culture — compile-to-exe plus a forum/script-sharing ecosystem — is a large part of why it spread.</dd>
+    <dt>Rationale</dt><dd>Shareability compounds: every shared, runnable task lowers the bar for the next user and seeds a library/community. It's how a single-developer tool grows reach without proportional developer effort.</dd>
+    <dt>Downsides</dt><dd>Shared arbitrary-Python tasks raise a trust/safety question (a sandbox is a downstream concern, deliberately deferred here). Bundling captured images/targets portably (across resolutions) is fiddly. Adoption depends on there being users to share with.</dd>
+  </dl>
+</article>
+
+<article class="idea" id="i7">
+  <div class="idea-head"><span class="rank">7.</span><h3>Foundation-hardening bundle</h3></div>
+  <div class="chips"><span class="chip hi">Confidence 90%</span><span class="chip cx">Complexity Low</span><span class="chip">Correctness · Quick wins</span></div>
+  <p>A tight cluster of concrete, verified fixes worth doing as one pass: (a) fix the <b>infinitely-recursive <code>repeat_delay</code> property</b>; (b) cache/thread-local the <code>mss</code> capture instance instead of creating one per poll; (c) make the watchdog release held keys and attempt a cooperative cancel before the nuclear <code>QThread.terminate()</code>; (d) replace the hardcoded Tesseract path with PATH/registry auto-detection.</p>
+  <dl>
+    <dt>Basis</dt><dd class="basis"><span class="tag direct">direct</span> Verified against the repo: <code>repeat_delay</code> getter returns <code>self.repeat_delay</code> and setter assigns <code>self.repeat_delay</code> with no backing field (<code>task_manager.py:80-86</code>) — any access via <code>engine.py:60/65</code> is a genuine <code>RecursionError</code>. Every capture path opens <code>with mss.mss()</code> per call (<code>vision.py:36,64,133</code>), contradicting the "raw hardware speed" pixel-scan pitch. The watchdog does <code>worker.terminate()</code> + rebuild (<code>task_manager.py:200-203</code>), which can strand held keys. Tesseract path is hardcoded at <code>vision.py:8</code>.</dd>
+    <dt>Rationale</dt><dd>These are small, high-confidence, individually-below-the-ambition-floor fixes — but as a bundle they're a real "harden the foundation" decision that removes a live crash path and closes the gap between the README's performance claims and the code. Best done under the safety net of idea 2.</dd>
+    <dt>Downsides</dt><dd>Thread-local <code>mss</code> must respect that <code>mss</code> instances aren't shareable across threads. A graceful watchdog cancel needs a bounded timeout before falling back to terminate, so it doesn't reintroduce the deadlock the watchdog exists to break.</dd>
+  </dl>
+</article>
+
+<h2>Rejection Summary</h2>
+<table>
+  <thead><tr><th class="num">#</th><th>Idea</th><th>Reason</th></tr></thead>
+  <tbody>
+    <tr><td class="num">1</td><td>Natural-language → task scaffold (LLM drafts a generator)</td><td>Novel but <code>external:</code>-only and speculative for a solo project; better explored as a <code>ce-brainstorm</code> variant than ranked as a core direction now.</td></tr>
+    <tr><td class="num">2</td><td>Visual node/step "no-code" task builder</td><td>Too expensive relative to value — a large new UI surface duplicating the recorder→editable-timeline path (idea 4) at much higher cost.</td></tr>
+    <tr><td class="num">3</td><td>Sandbox / permission model for tasks</td><td>Premature — there's no untrusted-import surface until sharing (idea 6) ships; a dependency of that idea, not a peer.</td></tr>
+    <tr><td class="num">4</td><td>Reactive "spreadsheet-cell" variables</td><td>Duplicates the stronger screen-state trigger idea (folded into idea 5).</td></tr>
+    <tr><td class="num">5</td><td>Replace <code>except Exception: print</code> error-swallowing</td><td>Basis refuted by verification — those sites already log via <code>global_logger</code>, and one citation was a warning <code>print</code> in an <code>else</code> branch, not a swallow.</td></tr>
+    <tr><td class="num">6</td><td><code>launch()</code> startup-sequencing rework (<code>app.exit()</code> before <code>exec()</code>)</td><td>Real oddity but tactical and below the ambition floor on its own; fold into idea 7 only if that area is touched.</td></tr>
+    <tr><td class="num">7</td><td>DB migrations / versioning / WAL</td><td>Legitimate future-proofing but premature at current scale; below the floor until the schema actually needs to evolve.</td></tr>
+    <tr><td class="num">8</td><td>Cross-platform support</td><td>Subject-scope violation — Windows-only (<code>pydirectinput</code> scan codes that games register) is the project's moat, not an accident to undo.</td></tr>
+    <tr><td class="num">9</td><td>Anti-RSI / hold-to-repeat template library</td><td>Below the ambition floor — shipped content, not a capability; a docs/examples add, not a direction.</td></tr>
+    <tr><td class="num">10</td><td>Multi-monitor / DPI-aware capture</td><td>Real, but folded into idea 3 (resilient targeting) rather than ranked separately.</td></tr>
+    <tr><td class="num">11</td><td>Circuit-breaker for flaky vision steps</td><td>Folded into idea 3 as the retry/threshold behavior of the <code>Target</code> resolver.</td></tr>
+  </tbody>
+</table>
+
+<footer class="composition-signal">
+  Composed 2026-07-15 by ce-ideate (surprise-me, repo-grounded) from a codebase scan of <code>MacroStudio</code> + automation-landscape web research. Bases verified against the repo by a fresh-context critic (9/11 direct claims confirmed; 2 overstated claims corrected or cut).
+</footer>
+</div>

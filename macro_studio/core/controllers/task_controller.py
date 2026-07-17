@@ -1,7 +1,7 @@
 import inspect, time
 from enum import Enum, auto
 from PySide6.QtCore import QMutex, QMutexLocker
-from typing import TYPE_CHECKING, Generator, Hashable
+from typing import TYPE_CHECKING, Generator, Hashable, Tuple, TypeAlias
 
 from macro_studio.core.types_and_enums import TaskInterruptedException, LogLevel
 from macro_studio.core.utils import global_logger
@@ -11,11 +11,18 @@ if TYPE_CHECKING:
     from macro_studio.core.controllers.task_manager import TaskManager
     from macro_studio.core.execution.task_worker import TaskWorker
 
+SortKey: TypeAlias = Tuple[float, int, int]
 
 class TaskState(Enum):
-    RUNNING = auto()        # Actively executing or waiting for a wake cycle
+    IDLE = auto()           # Instantiated and ready
+
+    # Alive
+    QUEUED = auto()         # Preparing to execute on the next wake cycle
+    RUNNING = auto()        # Actively executing
     PAUSED = auto()         # Soft paused (frozen in place, retaining local variables)
     INTERRUPTED = auto()    # Successful hard paused (waiting for resume)
+
+    # Dead / Terminal
     STOPPED = auto()        # Manual kill by the user
     FINISHED = auto()       # Natural successful completion
     CRASHED = auto()        # Died from an unhandled exception
@@ -44,7 +51,7 @@ class TaskController:
         self.name = unique_name or task_id
         self.display_name = display_name or task_func.__name__
 
-        self._state = TaskState.RUNNING if is_enabled else TaskState.STOPPED
+        self._state = TaskState.IDLE
         self._pause_timestamp = 0.0
         self._wake_time = 0.0
         self._is_enabled = is_enabled
@@ -91,10 +98,16 @@ class TaskController:
         return self._is_enabled
 
     def isAlive(self):
-        return self._generator is not None and self._state not in DEAD_STATES
+        return self._generator is not None and self._state != TaskState.IDLE and self._state not in DEAD_STATES
 
     def isPaused(self):
         return self._state in (TaskState.PAUSED, TaskState.INTERRUPTED)
+
+    def isQueued(self):
+        return self._state == TaskState.QUEUED
+
+    def isReady(self):
+        return self._state == TaskState.IDLE or (self._state in DEAD_STATES)
 
     def isRunning(self):
         return self._state == TaskState.RUNNING
@@ -104,6 +117,18 @@ class TaskController:
 
     def isValid(self):
         return self.manager.getController(self.name) is not None
+
+    def isSolo(self):
+        return self.manager.getSoloController() == self
+
+    def isSoloable(self) -> bool:
+        """
+        Returns True if the task manager has no active solo controller,
+        or if this specific controller is the currently active solo controller.
+        """
+        solo_controller = self.manager.getSoloController()
+
+        return solo_controller is None or solo_controller == self
 
     def _unsafeResetGenerator(self, new_state: TaskState, wake_time: float=None):
         self._generation += 1
@@ -129,7 +154,7 @@ class TaskController:
             self.state_change_by_worker = by_worker
         return self.isAlive()
 
-    def _unsafeGetSortKey(self):
+    def _unsafeGetSortKey(self) -> SortKey:
         return self._wake_time, self._id, self._generation
 
     def _getArgsAndKwargs(self, func):
@@ -161,7 +186,7 @@ class TaskController:
             func(*final_args, **final_kwargs)
             yield
 
-    def resetGeneratorAndGetSortKey(self, new_state: TaskState = TaskState.RUNNING, wake_time: float = None):
+    def resetGeneratorAndGetSortKey(self, new_state: TaskState = TaskState.QUEUED, wake_time: float = None) -> SortKey:
         """
         Creates a new generator (if new state is not stopped) and destroys the old one.
         Returns:
@@ -183,11 +208,14 @@ class TaskController:
 
     def restart(self, wake_time: float=None):
         """
-        Kills the current instance of the task and starts a fresh one at the next work cycle.
+        Kills the current instance of the task and tries to queue a fresh one at the next work cycle.
         Args:
             wake_time: The wake time for the task to run at after restarting.
         """
-        self.worker.moveToActiveAndReschedule(self, self.resetGeneratorAndGetSortKey(wake_time=wake_time))
+        if self.isSoloable() and self.isReady():
+            self.worker.moveToActiveAndReschedule(self, self.resetGeneratorAndGetSortKey(wake_time=wake_time))
+        else:
+            self.log("Cannot restart: Another task holds the solo lock", level=LogLevel.WARN)
 
     def pause(self, interrupt=False):
         """Halts the task and shifts its internal state."""
@@ -210,21 +238,41 @@ class TaskController:
 
     def resume(self):
         """Resumes the task, calculating how long it was frozen."""
-        was_hard_pause = self.isInterrupted()
 
-        elapsed = None
-        if self.worker.isAlive() and self.isPaused():
-            elapsed = time.perf_counter() - self._pause_timestamp
+        # Respect the Solo Lock
+        if not self.isSoloable():
+            self.log("Cannot resume: Another task holds the solo lock.", level=LogLevel.WARN)
+            return None
 
-        self._state = TaskState.RUNNING
+        is_soft_paused = self._state == TaskState.PAUSED
+        is_hard_paused = self._state == TaskState.INTERRUPTED
+
+        # Only proceed if it is actually paused
+        if not (is_soft_paused or is_hard_paused) or not self.worker.isAlive():
+            return None
+
+        # Calculate elapsed time
+        elapsed = time.perf_counter() - self._pause_timestamp
+
+        # Reset tracking variables
         self.state_change_by_worker = False
         self._pause_timestamp = 0.0
 
-        if elapsed is not None:
-            with QMutexLocker(self._mutex):
-                self._generation += 1
-                self._wake_time = 0 if was_hard_pause else (self._wake_time + elapsed)
-                self.worker.moveToActiveAndReschedule(self, self._unsafeGetSortKey())
+        # Transition to the Queued state
+        self._state = TaskState.QUEUED
+
+        # Thread-safe rescheduling
+        with QMutexLocker(self._mutex):
+            self._generation += 1
+
+            if is_hard_paused:
+                # Hard pauses were waiting for a manual trigger, so they run immediately
+                self._wake_time = 0
+            else:
+                # Soft pauses shift their future schedule forward by the time they lost
+                self._wake_time += elapsed
+
+            self.worker.moveToActiveAndReschedule(self, self._unsafeGetSortKey())
 
         return elapsed
 
@@ -233,14 +281,14 @@ class TaskController:
         with QMutexLocker(self._mutex):
             return self._generation
 
-    def resumeFromWorkerPause(self, delay: float=None):
+    def resumeFromWorkerPause(self, delay: float=None) -> SortKey:
         """
         Returns:
 
             * The comparable variables and optionally delay the wake time.
             * If no delay is provided, resets the wake time to 0.
         """
-        self._state = TaskState.RUNNING
+        self._state = TaskState.QUEUED
         with QMutexLocker(self._mutex):
             self._wake_time = 0 if delay is None else (self._wake_time + delay)
             return self._wake_time, self._id, self._generation
@@ -278,5 +326,8 @@ class TaskController:
         return self
 
     def __next__(self):
+        if self._state == TaskState.QUEUED:
+            self._state = TaskState.RUNNING
+
         with QMutexLocker(self._mutex):
             return next(self._generator)
