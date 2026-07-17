@@ -7,7 +7,7 @@ from macro_studio.core.types_and_enums import TaskInterruptedException
 from macro_studio.core.recording.input_translator import DirectInputTranslator
 from macro_studio.core.recording.timeline_handler import (
     ActionType, TimelineStep, M_FUNCTION_TO_PYDIRECTINPUT,
-    WaitCondition, ConditionType, CompareOp, TextMatch, ImageMatch)
+    WaitCondition, ConditionType, CompareOp, TextMatch, ImageMatch, ColorMatch)
 from macro_studio.actions import taskSleep, taskWaitForResume, taskPasteText
 
 if TYPE_CHECKING:
@@ -37,6 +37,14 @@ def _coerceNumber(value):
     if isinstance(value, str):
         return _parseNumber(value)
     return None
+
+# Color match mode -> vision function name (shared by runtime and export).
+_COLOR_MATCH_FN = {
+    ColorMatch.RGB: "isColorSimilar",
+    ColorMatch.PERCEPTUAL: "isColorSimilarPerceptual",
+    ColorMatch.BRIGHTNESS: "isBrightnessSimilar",
+    ColorMatch.HUE: "isHueSimilar",
+}
 
 _COMPARATORS = {
     CompareOp.EQ: lambda a, b: a == b,
@@ -97,7 +105,8 @@ def _waitConditionExport(cond: WaitCondition, template_b64: str | None = None):
         lines += ["    while True:", f"        {check}", "            break",
                   f"        yield from taskSleep({poll})"]
     elif cond.condition_type == ConditionType.COLOR:
-        imports.append("from macro_studio.vision import captureScreenColor, isColorSimilar")
+        color_fn = _COLOR_MATCH_FN.get(cond.color_match, "isColorSimilar")
+        imports.append(f"from macro_studio.vision import captureScreenColor, {color_fn}")
         if cond.target_var:
             target_expr = f"controller.getVar({cond.target_var!r})"
         else:
@@ -106,7 +115,7 @@ def _waitConditionExport(cond: WaitCondition, template_b64: str | None = None):
                 imports.append("from PySide6.QtGui import QColor")
         lines += [
             "    while True:",
-            f"        if isColorSimilar(captureScreenColor({area_expr}), {target_expr}, {cond.tolerance}):",
+            f"        if {color_fn}(captureScreenColor({area_expr}), {target_expr}, {cond.tolerance}):",
             "            break",
             f"        yield from taskSleep({poll})",
         ]
@@ -333,8 +342,9 @@ class ManualTaskWrapper:
             target = self._resolveTarget(cond)
             if not isinstance(target, QColor):
                 return False
-            from macro_studio.vision import isColorSimilar
-            return isColorSimilar(reading, target, cond.tolerance)
+            import macro_studio.vision as vision
+            matcher = getattr(vision, _COLOR_MATCH_FN.get(cond.color_match, "isColorSimilar"))
+            return matcher(reading, target, cond.tolerance)
         return False
 
     def _storeValue(self, cond: WaitCondition, reading):

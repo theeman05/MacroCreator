@@ -17,11 +17,20 @@ from PySide6.QtWidgets import (
 
 from macro_studio.core.types_and_enums import CaptureMode
 from macro_studio.core.recording.timeline_handler import (
-    WaitCondition, ConditionType, CompareOp, TextMatch, ImageMatch)
+    WaitCondition, ConditionType, CompareOp, TextMatch, ImageMatch, ColorMatch)
 from macro_studio.core.registries.type_handler import GlobalTypeHandler
 
 if TYPE_CHECKING:
     from macro_studio.core.data import VariableStore, TemplateStore
+
+# Per color-match mode: the tolerance spin's (max, suffix). RGB/perceptual span the
+# full RGB distance; brightness is a 0-255 lightness delta; hue is 0-180 degrees.
+_COLOR_TOL_RANGE = {
+    ColorMatch.RGB: (442, ""),
+    ColorMatch.PERCEPTUAL: (442, ""),
+    ColorMatch.BRIGHTNESS: (255, ""),
+    ColorMatch.HUE: (180, "°"),
+}
 
 # Which variable types can bind to each field.
 _NUMBER_TYPES = (int, float)
@@ -170,7 +179,7 @@ def summaryText(cond: WaitCondition) -> str:
         text = f"Wait until [{where}] image ({img}) {cond.image_match.value} (≥{pct}%)"
     else:  # COLOR
         target = cond.target_var or (GlobalTypeHandler.toString(cond.target) if cond.target is not None else "?")
-        text = f"Wait until [{area}] ~ {target} (±{cond.tolerance})"
+        text = f"Wait until [{area}] {cond.color_match.value} ~ {target} (±{cond.tolerance})"
 
     if cond.store_var:
         text += f"  → {cond.store_var}"
@@ -272,8 +281,25 @@ class WaitUntilDialog(QDialog):
 
         # Color page
         color_page = QWidget()
-        color_lay = QHBoxLayout(color_page)
+        color_lay = QVBoxLayout(color_page)
         color_lay.setContentsMargins(0, 0, 0, 0)
+
+        # Row 1: match mode + tolerance
+        color_top = QHBoxLayout()
+        self.color_match_combo = QComboBox()
+        for cm in ColorMatch:
+            self.color_match_combo.addItem(cm.value, cm)
+        self.color_match_combo.setToolTip(
+            "How the sampled pixel is compared to the target color")
+        self.tol_spin = QSpinBox()
+        self.tol_spin.setRange(0, 442)  # widened/narrowed per match mode
+        color_top.addWidget(self.color_match_combo)
+        color_top.addWidget(QLabel("±"))
+        color_top.addWidget(self.tol_spin)
+        color_top.addStretch()
+
+        # Row 2: target color (picked value or variable)
+        color_bottom = QHBoxLayout()
         self.color_target_mode = QComboBox()
         self.color_target_mode.addItems(["Value", "Variable"])
         self.color_target_stack = QStackedWidget()
@@ -289,12 +315,11 @@ class WaitUntilDialog(QDialog):
         self.color_var_combo = QComboBox()
         self.color_target_stack.addWidget(color_pick_page)
         self.color_target_stack.addWidget(self.color_var_combo)
-        self.tol_spin = QSpinBox()
-        self.tol_spin.setRange(0, 442)  # max RGB Euclidean distance
-        color_lay.addWidget(QLabel("±"))
-        color_lay.addWidget(self.tol_spin)
-        color_lay.addWidget(self.color_target_mode)
-        color_lay.addWidget(self.color_target_stack, 1)
+        color_bottom.addWidget(self.color_target_mode)
+        color_bottom.addWidget(self.color_target_stack, 1)
+
+        color_lay.addLayout(color_top)
+        color_lay.addLayout(color_bottom)
 
         # Image page
         image_page = QWidget()
@@ -370,6 +395,7 @@ class WaitUntilDialog(QDialog):
         self.num_target_mode.currentIndexChanged.connect(self.num_target_stack.setCurrentIndex)
         self.text_target_mode.currentIndexChanged.connect(self.text_target_stack.setCurrentIndex)
         self.color_target_mode.currentIndexChanged.connect(self.color_target_stack.setCurrentIndex)
+        self.color_match_combo.currentIndexChanged.connect(self._updateColorTolRange)
         self.image_match_combo.currentIndexChanged.connect(self._updateStoreEnabled)
         self.btn_draw.clicked.connect(self._drawArea)
         self.btn_pick_color.clicked.connect(self._pickColor)
@@ -430,6 +456,13 @@ class WaitUntilDialog(QDialog):
             self.chk_store.setChecked(False)
         self.chk_store.setEnabled(not disappears)
         self.store_var_combo.setEnabled(not disappears)
+
+    def _updateColorTolRange(self):
+        """Adjust the tolerance spin's range/suffix to match the selected color metric."""
+        cm = ColorMatch(self.color_match_combo.currentData())
+        max_v, suffix = _COLOR_TOL_RANGE[cm]
+        self.tol_spin.setMaximum(max_v)
+        self.tol_spin.setSuffix(suffix)
 
     def _captureWithOverlay(self, mode):
         """Hide the dialog, run the capture overlay, then restore the dialog."""
@@ -580,6 +613,10 @@ class WaitUntilDialog(QDialog):
         self.type_combo.setCurrentIndex(self.type_combo.findData(cond.condition_type))
         self._onTypeChanged()
 
+        # Set the color metric (and its tolerance range) before the tolerance value,
+        # so a mode with a smaller max doesn't clamp the loaded value.
+        self.color_match_combo.setCurrentIndex(self.color_match_combo.findData(cond.color_match))
+        self._updateColorTolRange()
         self.tol_spin.setValue(cond.tolerance)
         self.op_combo.setCurrentIndex(self.op_combo.findData(cond.operator))
         self.text_mode_combo.setCurrentIndex(self.text_mode_combo.findData(cond.text_mode))
@@ -643,6 +680,7 @@ class WaitUntilDialog(QDialog):
         cond.operator = CompareOp(self.op_combo.currentData())
         cond.text_mode = TextMatch(self.text_mode_combo.currentData())
         cond.image_match = ImageMatch(self.image_match_combo.currentData())
+        cond.color_match = ColorMatch(self.color_match_combo.currentData())
         cond.tolerance = self.tol_spin.value()
         cond.threshold = self.threshold_spin.value() / 100
 

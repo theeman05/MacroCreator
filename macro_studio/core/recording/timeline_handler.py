@@ -52,6 +52,12 @@ class ImageMatch(str, Enum):
     APPEARS = "appears"
     DISAPPEARS = "disappears"
 
+class ColorMatch(str, Enum):
+    RGB = "RGB distance"          # straight RGB Euclidean distance
+    PERCEPTUAL = "Perceptual"     # human-weighted RGB (subtle UI shades)
+    BRIGHTNESS = "Brightness"     # lightness only, ignores hue (flash/dim)
+    HUE = "Hue"                   # hue only, ignores brightness/saturation
+
 # Geometry type the watch area captures for each condition (Region for OCR/image, Point for color).
 _COND_AREA_TYPE = {
     ConditionType.NUMBER: QRect,
@@ -77,7 +83,8 @@ class WaitCondition:
     operator: CompareOp = CompareOp.GTE   # Number comparison
     text_mode: TextMatch = TextMatch.CONTAINS  # Text comparison
     image_match: ImageMatch = ImageMatch.APPEARS  # Image: wait for template to appear or disappear
-    tolerance: int = DEFAULT_COLOR_TOLERANCE   # Color match tolerance
+    color_match: ColorMatch = ColorMatch.RGB   # Color: which metric compares reading to target
+    tolerance: int = DEFAULT_COLOR_TOLERANCE   # Color match tolerance (meaning depends on color_match)
     threshold: float = DEFAULT_IMAGE_THRESHOLD  # Image template match confidence (0..1)
     target: object = None          # number / QColor / str literal to compare against
     target_var: str | None = None  # variable name for the target; wins over target
@@ -95,6 +102,7 @@ class WaitCondition:
             "operator": self.operator.name,
             "text_mode": self.text_mode.name,
             "image_match": self.image_match.name,
+            "color_match": self.color_match.name,
             "tolerance": self.tolerance,
             "threshold": self.threshold,
         }
@@ -121,6 +129,7 @@ class WaitCondition:
         cond.operator = CompareOp[data.get("operator", CompareOp.GTE.name)]
         cond.text_mode = TextMatch[data.get("text_mode", TextMatch.CONTAINS.name)]
         cond.image_match = ImageMatch[data.get("image_match", ImageMatch.APPEARS.name)]
+        cond.color_match = ColorMatch[data.get("color_match", ColorMatch.RGB.name)]
         cond.tolerance = data.get("tolerance", DEFAULT_COLOR_TOLERANCE)
         cond.threshold = data.get("threshold", DEFAULT_IMAGE_THRESHOLD)
         cond.template_id = data.get("template_id")

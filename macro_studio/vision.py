@@ -129,6 +129,29 @@ def isBrightnessSimilar(color_a: QColor, color_b: QColor, tolerance: int = 10) -
     return abs(color_a.lightness() - color_b.lightness()) <= tolerance
 
 
+def isHueSimilar(color_a: QColor, color_b: QColor, tolerance: int = 10) -> bool:
+    """Checks if two colors share a similar hue, ignoring brightness and saturation.
+
+    Best for "is this the same color family" regardless of shading (e.g. a red
+    health bar whether bright or dark). Hue is circular (0-359 degrees), so the
+    comparison wraps around. Achromatic colors (black/white/grey, whose hue is
+    undefined) only match other achromatic colors.
+
+    Args:
+        color_a: The first color to compare (usually captured from the screen).
+        color_b: The second color to compare (usually the target).
+        tolerance: The maximum hue difference allowed, in degrees (0-180).
+
+    Returns:
+        True if the hue difference is <= tolerance, False otherwise.
+    """
+    hue_a, hue_b = color_a.hue(), color_b.hue()
+    if hue_a == -1 or hue_b == -1:  # -1 == achromatic / undefined hue
+        return hue_a == hue_b
+    diff = abs(hue_a - hue_b)
+    return min(diff, 360 - diff) <= tolerance
+
+
 def _sctWithOptionalBounds(bounds):
     with mss.mss() as sct:
         if bounds:
