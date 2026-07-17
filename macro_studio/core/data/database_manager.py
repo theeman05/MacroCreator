@@ -123,6 +123,17 @@ class DatabaseManager:
                             )
                            """)
 
+            # Global (profile-independent) library of image templates that
+            # WAIT_UNTIL image conditions reference by id. `image` is base64 PNG.
+            cursor.execute("""
+                            CREATE TABLE IF NOT EXISTS templates (
+                                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                 name TEXT,
+                                 image TEXT NOT NULL,
+                                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                            )
+                           """)
+
             _setupTriggers(cursor)
 
             conn.commit()

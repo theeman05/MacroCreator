@@ -132,8 +132,12 @@ class TransparentOverlay(QWidget):
         self.setClickThrough(True)
         self.main_window.show()
 
-    def captureData(self, mode: CaptureMode, display_text=None) -> QRect | QPoint | None:
-        """Shows the overlay and waits until capture is finished"""
+    def captureData(self, mode: CaptureMode, display_text=None):
+        """Shows the overlay and waits until capture is finished.
+
+        Returns the captured value for the mode: a QRect (REGION), QPoint (POINT),
+        QColor (COLOR), QPixmap template (IMAGE), or None if cancelled.
+        """
         self.current_mode = mode
         self.current_mouse_pos = None
 
@@ -149,6 +153,8 @@ class TransparentOverlay(QWidget):
         if display_text is None:
             if mode is CaptureMode.REGION:
                 display_text = "Click and drag to select a region"
+            elif mode is CaptureMode.IMAGE:
+                display_text = "Click and drag a box around the image to find"
             elif mode is CaptureMode.POINT:
                 display_text = "Click to set the point"
             elif mode is CaptureMode.COLOR:
@@ -220,7 +226,7 @@ class TransparentOverlay(QWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             if self.current_mode is CaptureMode.POINT:
                 self._finishCapture(event.pos())
-            elif self.current_mode is CaptureMode.REGION:
+            elif self.current_mode in (CaptureMode.REGION, CaptureMode.IMAGE):
                 # Start dragging
                 self.start_pos = event.pos()
                 self.selection_rect = QRect(self.start_pos, self.start_pos)
@@ -233,7 +239,7 @@ class TransparentOverlay(QWidget):
                 self._finishCapture(color)
 
     def mouseMoveEvent(self, event):
-        if self.current_mode is CaptureMode.REGION and self.start_pos:
+        if self.current_mode in (CaptureMode.REGION, CaptureMode.IMAGE) and self.start_pos:
             # Update the drag rectangle
             self.selection_rect = QRect(self.start_pos, event.pos()).normalized()
             self.update()  # Force repaint to show the box growing
@@ -247,6 +253,24 @@ class TransparentOverlay(QWidget):
             # Finish dragging
             final_rect = self.selection_rect
             self._finishCapture(final_rect)
+        elif self.current_mode is CaptureMode.IMAGE and self.start_pos:
+            # Finish dragging: crop the template pixels out of the frozen screen.
+            self._finishCapture(self._cropFrozen(self.selection_rect))
+
+    def _cropFrozen(self, rect: QRect):
+        """Return the frozen-screen pixels inside ``rect`` as a QPixmap, or None."""
+        if not rect or rect.width() <= 0 or rect.height() <= 0 or self._frozen_screen is None:
+            return None
+        # The frozen grab is in device pixels; the selection is in logical pixels.
+        # Scale by the device pixel ratio so the crop lands on the right pixels
+        # (a no-op on the DPI-unaware setups the rest of the app assumes).
+        dpr = self._frozen_screen.devicePixelRatio()
+        if dpr != 1.0:
+            rect = QRect(round(rect.x() * dpr), round(rect.y() * dpr),
+                         round(rect.width() * dpr), round(rect.height() * dpr))
+        template = self._frozen_screen.copy(rect)
+        template.setDevicePixelRatio(1.0)  # store raw pixels; matcher works in physical pixels
+        return template
 
     def keyPressEvent(self, event: QKeyEvent):
         cur_mode = self.current_mode

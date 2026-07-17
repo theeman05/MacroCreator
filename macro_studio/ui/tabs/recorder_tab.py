@@ -31,6 +31,7 @@ class RecorderTab(QWidget):
         self.overlay = overlay
         self.tasks = profile.tasks
         self.var_store = profile.vars
+        self.templates = profile.templates
         self.timeline_model = TimelineModel()
         self.mouse_combo_model = MousePosComboBoxModel(profile.vars)
         self.undo_stack = QUndoStack(self)
@@ -273,7 +274,7 @@ class RecorderTab(QWidget):
             self.timeline_list.insertItem(index, item)
 
         # Create the custom widget and link to item
-        widget = TimelineItemWidget(self.overlay, self.mouse_combo_model, data, self.var_store)
+        widget = TimelineItemWidget(self.overlay, self.mouse_combo_model, data, self.var_store, self.templates)
         self.timeline_list.setItemWidget(item, widget)
 
         if duration := getStepDuration(data): self.addToTimer(duration)

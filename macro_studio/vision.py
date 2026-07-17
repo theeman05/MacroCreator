@@ -1,4 +1,4 @@
-import cv2, pytesseract, mss, os
+import cv2, pytesseract, mss, os, base64
 import numpy as np
 from PySide6.QtCore import QRect, QPoint
 from PIL import Image
@@ -129,6 +129,29 @@ def isBrightnessSimilar(color_a: QColor, color_b: QColor, tolerance: int = 10) -
     return abs(color_a.lightness() - color_b.lightness()) <= tolerance
 
 
+def isHueSimilar(color_a: QColor, color_b: QColor, tolerance: int = 10) -> bool:
+    """Checks if two colors share a similar hue, ignoring brightness and saturation.
+
+    Best for "is this the same color family" regardless of shading (e.g. a red
+    health bar whether bright or dark). Hue is circular (0-359 degrees), so the
+    comparison wraps around. Achromatic colors (black/white/grey, whose hue is
+    undefined) only match other achromatic colors.
+
+    Args:
+        color_a: The first color to compare (usually captured from the screen).
+        color_b: The second color to compare (usually the target).
+        tolerance: The maximum hue difference allowed, in degrees (0-180).
+
+    Returns:
+        True if the hue difference is <= tolerance, False otherwise.
+    """
+    hue_a, hue_b = color_a.hue(), color_b.hue()
+    if hue_a == -1 or hue_b == -1:  # -1 == achromatic / undefined hue
+        return hue_a == hue_b
+    diff = abs(hue_a - hue_b)
+    return min(diff, 360 - diff) <= tolerance
+
+
 def _sctWithOptionalBounds(bounds):
     with mss.mss() as sct:
         if bounds:
@@ -150,17 +173,81 @@ def _sctWithOptionalBounds(bounds):
         return sct.grab(region), region
 
 
-def _templateHelper(template_path: str, bounds: QRect | None = None):
+def trimTransparentB64(b64: str) -> str:
+    """Return a base64 PNG with fully-transparent border rows/columns removed.
+
+    Images with no alpha channel (screen grabs, JPGs) or that are entirely
+    transparent are returned unchanged. Template matching ignores alpha, so
+    trimming the transparent margins tightens the search to the real content
+    (like Photoshop's "Trim").
+
+    Args:
+        b64: base64 text of a PNG image.
+
+    Returns:
+        base64 text of the trimmed PNG, or the original string when there is
+        nothing to trim.
+    """
+    raw = base64.b64decode(b64)
+    img = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_UNCHANGED)
+    if img is None or img.ndim != 3 or img.shape[2] < 4:
+        return b64  # no alpha channel to trim against
+
+    mask = img[:, :, 3] > 0  # opaque (even partially) pixels
+    if not mask.any():
+        return b64  # fully transparent; nothing meaningful to keep
+
+    rows = np.where(mask.any(axis=1))[0]
+    cols = np.where(mask.any(axis=0))[0]
+    y0, y1 = int(rows[0]), int(rows[-1])
+    x0, x1 = int(cols[0]), int(cols[-1])
+    if x0 == 0 and y0 == 0 and x1 == img.shape[1] - 1 and y1 == img.shape[0] - 1:
+        return b64  # already tight
+
+    ok, png = cv2.imencode(".png", img[y0:y1 + 1, x0:x1 + 1])
+    if not ok:
+        return b64
+    return base64.b64encode(png.tobytes()).decode("ascii")
+
+
+def templateFromB64(b64: str) -> np.ndarray:
+    """Decode a base64-encoded PNG template into a BGR numpy array.
+
+    Args:
+        b64: base64 text of a PNG image (as stored on a WAIT_UNTIL image condition).
+
+    Returns:
+        The template as a BGR numpy array, ready for ``findImageCenterFromArray``.
+
+    Raises:
+        ValueError: If the string cannot be base64-decoded or is not a decodable image.
+    """
+    raw = base64.b64decode(b64)  # binascii.Error is a subclass of ValueError
+    template = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR)
+    if template is None:
+        raise ValueError("Could not decode template image bytes")
+    return template
+
+
+def _findTemplate(template_bgr: np.ndarray, bounds: QRect | None, threshold: float) -> tuple[QPoint, float] | None:
+    """Shared match core: locate ``template_bgr`` within ``bounds`` (or the whole screen)."""
     screenshot, region = _sctWithOptionalBounds(bounds)
-
     screen_img = np.array(screenshot)[..., :3]  # BGRA to BGR
-    template_img = cv2.imread(template_path, cv2.IMREAD_COLOR)
 
-    if template_img is None:
-        raise FileNotFoundError(f"Template image not found at: {template_path}")
+    h, w = template_bgr.shape[:2]
+    # matchTemplate raises when the template is larger than the search image.
+    if h > screen_img.shape[0] or w > screen_img.shape[1]:
+        return None
 
-    # Perform OpenCV template matching
-    return template_img, region, cv2.matchTemplate(screen_img, template_img, cv2.TM_CCOEFF_NORMED)
+    result = cv2.matchTemplate(screen_img, template_bgr, cv2.TM_CCOEFF_NORMED)
+    _, max_val, _, max_loc = cv2.minMaxLoc(result)
+
+    if max_val >= threshold:
+        center_x = max_loc[0] + (w // 2) + region["left"]
+        center_y = max_loc[1] + (h // 2) + region["top"]
+        return QPoint(center_x, center_y), max_val
+
+    return None
 
 
 def findImageCenter(template_path: str, bounds: QRect | None = None, threshold: float=0.8) -> tuple[QPoint, float] | None:
@@ -174,69 +261,27 @@ def findImageCenter(template_path: str, bounds: QRect | None = None, threshold: 
     Returns:
         The absolute center coordinates of the found template object and the confidence score, or None if not found.
     """
-    template_img, region, result = _templateHelper(template_path, bounds)
-    _, max_val, _, max_loc = cv2.minMaxLoc(result)
-
-    if max_val >= threshold:
-        h, w = template_img.shape[:2]
-        center_x = max_loc[0] + (w // 2) + region["left"]
-        center_y = max_loc[1] + (h // 2) + region["top"]
-        return QPoint(center_x, center_y), max_val
-
-    return None
+    template_img = cv2.imread(template_path, cv2.IMREAD_COLOR)
+    if template_img is None:
+        raise FileNotFoundError(f"Template image not found at: {template_path}")
+    return _findTemplate(template_img, bounds, threshold)
 
 
-def findImageCenters(template_path: str, bounds: QRect | None = None, threshold: float = 0.8) -> list[
-    tuple[QPoint, float]]:
-    """Finds all instances of an image template on the screen and returns their absolute center coordinates.
+def findImageCenterFromArray(template_bgr: np.ndarray, bounds: QRect | None = None, threshold: float=0.8) -> tuple[QPoint, float] | None:
+    """Like ``findImageCenter`` but takes an already-decoded BGR template array.
+
+    Used at runtime for image WAIT_UNTIL conditions, whose template lives in the
+    step (base64) rather than on disk — see ``templateFromB64``.
 
     Args:
-        template_path (str): Path to the template image.
-        bounds: The bounds to search for the template in. If no bounds are provided, it searches the entire primary monitor.
-        threshold: Confidence threshold to consider the result as a potential match.
+        template_bgr: The template as a BGR numpy array.
+        bounds: The bounds to search within. If ``None``, searches the whole primary monitor.
+        threshold: Confidence threshold to consider the result as a match.
 
     Returns:
-        A list of tuples containing the absolute center coordinates (QPoint) and the confidence score (float).
-        Returns an empty list if no matches are found.
+        The absolute center coordinates of the match and the confidence score, or None if not found.
     """
-    template_img, region, result = _templateHelper(template_path, bounds)
-
-    # Find all locations in the result matrix that exceed the threshold
-    y_locs, x_locs = np.where(result >= threshold)
-
-    h, w = template_img.shape[:2]
-    raw_matches = []
-
-    # Extract the coordinates and their specific confidence scores
-    for x, y in zip(x_locs, y_locs):
-        score = result[y, x]
-        raw_matches.append((x, y, score))
-
-    # Sort matches by confidence score descending so we always keep the strongest match in a cluster
-    raw_matches.sort(key=lambda match: match[2], reverse=True)
-
-    final_results = []
-
-    for x, y, score in raw_matches:
-        is_duplicate = False
-
-        # Compare against already validated matches to avoid cluster duplicates
-        for prev_pt, _ in final_results:
-            # Revert the absolute coordinates back to relative for distance checking
-            prev_x = prev_pt.x() - region["left"] - (w // 2)
-            prev_y = prev_pt.y() - region["top"] - (h // 2)
-
-            # If the current point is within half the width/height of an existing match, it's the same object
-            if abs(x - prev_x) < (w // 2) and abs(y - prev_y) < (h // 2):
-                is_duplicate = True
-                break
-
-        if not is_duplicate:
-            center_x = int(x + (w // 2) + region["left"])
-            center_y = int(y + (h // 2) + region["top"])
-            final_results.append((QPoint(center_x, center_y), float(score)))
-
-    return final_results
+    return _findTemplate(template_bgr, bounds, threshold)
 
 
 def getScreenState(bounds: QRect | None = None) -> np.ndarray:

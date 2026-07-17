@@ -29,7 +29,7 @@ ACTION_BINDINGS = {
 
 class TimelineItemWidget(QWidget):
     """The complex row in the RIGHT timeline."""
-    def __init__(self, overlay, mouse_combo_model, data: TimelineStep, var_store=None):
+    def __init__(self, overlay, mouse_combo_model, data: TimelineStep, var_store=None, template_store=None):
         super().__init__()
         action_type = data.action_type
 
@@ -57,7 +57,7 @@ class TimelineItemWidget(QWidget):
         if binding is DualMouseEditor:
             self.action_widget = DualMouseEditor(self, data.value, overlay, mouse_combo_model)
         elif binding is WaitUntilEditor:
-            self.action_widget = WaitUntilEditor(self, data.value, overlay, var_store)
+            self.action_widget = WaitUntilEditor(self, data.value, overlay, var_store, template_store)
         else:
             self.action_widget = binding(self, data.value)
 

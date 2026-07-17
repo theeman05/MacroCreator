@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import TYPE_CHECKING, TypeAlias, Callable, Generator, Tuple
 from PySide6.QtCore import QPoint, QRect
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QPixmap
 
 if TYPE_CHECKING:
     from macro_studio.ui.overlay import TransparentOverlay
@@ -12,6 +12,11 @@ class CaptureMode(Enum):
     POINT = QPoint
     REGION = QRect
     COLOR = QColor
+    # IMAGE drags a region like REGION but returns the cropped pixels (a QPixmap
+    # template) instead of the rect. Its value must differ from REGION's QRect,
+    # or Enum would fold it into a REGION alias. It is captured on demand by the
+    # wait-until dialog, not registered as a variable capture type.
+    IMAGE = QPixmap
 
 class WorkerState(Enum):
     IDLE = auto()

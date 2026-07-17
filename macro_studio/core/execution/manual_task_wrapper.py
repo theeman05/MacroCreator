@@ -7,7 +7,7 @@ from macro_studio.core.types_and_enums import TaskInterruptedException
 from macro_studio.core.recording.input_translator import DirectInputTranslator
 from macro_studio.core.recording.timeline_handler import (
     ActionType, TimelineStep, M_FUNCTION_TO_PYDIRECTINPUT,
-    WaitCondition, ConditionType, CompareOp, TextMatch)
+    WaitCondition, ConditionType, CompareOp, TextMatch, ImageMatch, ColorMatch)
 from macro_studio.actions import taskSleep, taskWaitForResume, taskPasteText
 
 if TYPE_CHECKING:
@@ -38,6 +38,14 @@ def _coerceNumber(value):
         return _parseNumber(value)
     return None
 
+# Color match mode -> vision function name (shared by runtime and export).
+_COLOR_MATCH_FN = {
+    ColorMatch.RGB: "isColorSimilar",
+    ColorMatch.PERCEPTUAL: "isColorSimilarPerceptual",
+    ColorMatch.BRIGHTNESS: "isBrightnessSimilar",
+    ColorMatch.HUE: "isHueSimilar",
+}
+
 _COMPARATORS = {
     CompareOp.EQ: lambda a, b: a == b,
     CompareOp.NE: lambda a, b: a != b,
@@ -57,8 +65,12 @@ def _qtLiteralExpr(value):
         return f"QColor({value.red()}, {value.green()}, {value.blue()})"
     return repr(value)
 
-def _waitConditionExport(cond: WaitCondition):
-    """Build (body_lines, import_lines) replicating a WAIT_UNTIL step as exported code."""
+def _waitConditionExport(cond: WaitCondition, template_b64: str | None = None):
+    """Build (body_lines, import_lines) replicating a WAIT_UNTIL step as exported code.
+
+    ``template_b64`` is the resolved image bytes (from the template library or the
+    legacy inline field); the caller resolves it since export has no DB access.
+    """
     imports = []
     poll = cond.poll_interval or DEFAULT_POLL_S
 
@@ -93,7 +105,8 @@ def _waitConditionExport(cond: WaitCondition):
         lines += ["    while True:", f"        {check}", "            break",
                   f"        yield from taskSleep({poll})"]
     elif cond.condition_type == ConditionType.COLOR:
-        imports.append("from macro_studio.vision import captureScreenColor, isColorSimilar")
+        color_fn = _COLOR_MATCH_FN.get(cond.color_match, "isColorSimilar")
+        imports.append(f"from macro_studio.vision import captureScreenColor, {color_fn}")
         if cond.target_var:
             target_expr = f"controller.getVar({cond.target_var!r})"
         else:
@@ -102,7 +115,21 @@ def _waitConditionExport(cond: WaitCondition):
                 imports.append("from PySide6.QtGui import QColor")
         lines += [
             "    while True:",
-            f"        if isColorSimilar(captureScreenColor({area_expr}), {target_expr}, {cond.tolerance}):",
+            f"        if {color_fn}(captureScreenColor({area_expr}), {target_expr}, {cond.tolerance}):",
+            "            break",
+            f"        yield from taskSleep({poll})",
+        ]
+    elif cond.condition_type == ConditionType.IMAGE:
+        imports += ["import base64", "import numpy as np", "import cv2",
+                    "from macro_studio.vision import findImageCenterFromArray"]
+        # area_expr is already "None" (whole screen) when no bounds were set.
+        check = "if _match is not None:" if cond.image_match != ImageMatch.DISAPPEARS else "if _match is None:"
+        b64 = template_b64 or cond.template_b64 or ""
+        lines += [
+            f"    _template = cv2.imdecode(np.frombuffer(base64.b64decode({b64!r}), np.uint8), cv2.IMREAD_COLOR)",
+            "    while True:",
+            f"        _match = findImageCenterFromArray(_template, {area_expr}, {cond.threshold})",
+            f"        {check}",
             "            break",
             f"        yield from taskSleep({poll})",
         ]
@@ -129,6 +156,8 @@ class ManualTaskWrapper:
         self.step_idx = 0
         self.inputs_pending_release = set() # Set of inputs that had a partner
         self.active_solo_inputs = set() # Set of inputs to release upon task completion without partners
+        self._template_cache = {}  # base64 -> decoded BGR template (image conditions)
+        self._gallery_cache = {}   # template_id -> base64 (from the template library)
         self.updateModel(model)
 
     def updateModel(self, model: "TaskModel"):
@@ -227,12 +256,58 @@ class ManualTaskWrapper:
     def _resolveTarget(self, cond: WaitCondition):
         return self._resolveVar(cond.target_var) if cond.target_var else cond.target
 
-    def _readArea(self, cond: WaitCondition, area):
-        """Read the watch area, returning a typed reading (number / str / QColor) or None."""
-        if area is None:
+    def _galleryB64(self, template_id: int):
+        """Resolve a template library id to its base64 image (cached), or None."""
+        if template_id in self._gallery_cache:
+            return self._gallery_cache[template_id]
+        b64 = None
+        try:
+            with self.var_store.db.getConn() as conn:
+                row = conn.execute(
+                    "SELECT image FROM templates WHERE id = ?", (template_id,)).fetchone()
+            if row is not None:
+                b64 = row["image"]
+        except Exception:
+            b64 = None
+        self._gallery_cache[template_id] = b64
+        return b64
+
+    def _templateB64(self, cond: WaitCondition):
+        """The condition's template bytes: prefer the library reference, fall back to legacy inline."""
+        if cond.template_id is not None:
+            b64 = self._galleryB64(cond.template_id)
+            if b64:
+                return b64
+        return cond.template_b64
+
+    def _decodeTemplate(self, cond: WaitCondition):
+        """Decode (and cache) an image condition's base64 template, or None."""
+        b64 = self._templateB64(cond)
+        if not b64:
             return None
+        template = self._template_cache.get(b64)
+        if template is None:
+            from macro_studio.vision import templateFromB64
+            try:
+                template = templateFromB64(b64)
+            except ValueError:
+                return None
+            self._template_cache[b64] = template
+        return template
+
+    def _readArea(self, cond: WaitCondition, area):
+        """Read the watch area, returning a typed reading (number / str / QColor / match tuple) or None."""
         # Lazy import: vision pulls in OpenCV/Tesseract, unneeded unless a condition
         # actually reads the screen.
+        if cond.condition_type == ConditionType.IMAGE:
+            template = self._decodeTemplate(cond)
+            if template is None:
+                return None
+            from macro_studio.vision import findImageCenterFromArray
+            # area None => whole screen; reading is (center QPoint, confidence) or None.
+            return findImageCenterFromArray(template, area, cond.threshold)
+        if area is None:
+            return None
         from macro_studio.vision import captureScreenColor, captureScreenText
         if cond.condition_type == ConditionType.COLOR:
             return captureScreenColor(area)
@@ -242,6 +317,10 @@ class ManualTaskWrapper:
         return text
 
     def _evaluate(self, cond: WaitCondition, reading):
+        # Image is checked before the None-guard: "disappears" is satisfied by a None reading.
+        if cond.condition_type == ConditionType.IMAGE:
+            found = reading is not None
+            return (not found) if cond.image_match == ImageMatch.DISAPPEARS else found
         if reading is None:
             return False
         if cond.condition_type == ConditionType.NUMBER:
@@ -263,14 +342,23 @@ class ManualTaskWrapper:
             target = self._resolveTarget(cond)
             if not isinstance(target, QColor):
                 return False
-            from macro_studio.vision import isColorSimilar
-            return isColorSimilar(reading, target, cond.tolerance)
+            import macro_studio.vision as vision
+            matcher = getattr(vision, _COLOR_MATCH_FN.get(cond.color_match, "isColorSimilar"))
+            return matcher(reading, target, cond.tolerance)
         return False
 
-    def _maybeStore(self, cond: WaitCondition, reading):
-        if (cond.store_var and reading is not None and
+    def _storeValue(self, cond: WaitCondition, reading):
+        """The value written to store_var for a reading: the center point for image, else the reading."""
+        if reading is None:
+            return None
+        if cond.condition_type == ConditionType.IMAGE:
+            return reading[0]  # (center QPoint, confidence) -> QPoint
+        return reading
+
+    def _maybeStore(self, cond: WaitCondition, value):
+        if (cond.store_var and value is not None and
                 self.var_store.get(cond.store_var) is not None):
-            self.var_store.updateValue(cond.store_var, reading)
+            self.var_store.updateValue(cond.store_var, value)
 
     def _runWaitUntil(self, step: TimelineStep):
         cond = step.value
@@ -280,9 +368,12 @@ class ManualTaskWrapper:
         last_stored = object()  # sentinel: the first real reading always writes
         while True:
             reading = self._readArea(cond, self._resolveArea(cond))
-            if reading is not None and reading != last_stored:
-                self._maybeStore(cond, reading)
-                last_stored = reading
+            # Dedup on the stored value (image reads jitter in confidence each poll,
+            # so compare on the matched point, not the raw tuple).
+            store_val = self._storeValue(cond, reading)
+            if store_val is not None and store_val != last_stored:
+                self._maybeStore(cond, store_val)
+                last_stored = store_val
             if self._evaluate(cond, reading):
                 return
             yield from taskSleep(poll)
@@ -328,7 +419,8 @@ class ManualTaskWrapper:
                 body_lines.append(f"    yield from pasteText({repr(step.value)})")
 
             elif step.action_type == ActionType.WAIT_UNTIL and isinstance(step.value, WaitCondition):
-                wu_lines, wu_imports = _waitConditionExport(step.value)
+                resolved_b64 = self._templateB64(step.value) if step.value.condition_type == ConditionType.IMAGE else None
+                wu_lines, wu_imports = _waitConditionExport(step.value, resolved_b64)
                 body_lines.extend(wu_lines)
                 for imp in wu_imports:
                     if imp not in extra_imports:
