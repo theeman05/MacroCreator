@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QLabel, QTabWidget, QDockWidget, QStatusBar, QVBoxLayout, QWidget, QSystemTrayIcon
 )
 from PySide6.QtGui import QCloseEvent, QFont, QIcon
-from PySide6.QtCore import Qt, Signal, QTimer, QSettings, , QEvent
+from PySide6.QtCore import Qt, Signal, QTimer, QSettings, QEvent
 from pynput import keyboard
 
 from macro_studio.core.types_and_enums import LogPacket, LogLevel, LogErrorPacket, WorkerState

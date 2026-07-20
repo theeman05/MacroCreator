@@ -41,11 +41,17 @@ def plusFinder(controller: Controller):
         yield from taskMouseClick(controller.getVar("first_item_pt"))
         yield from taskSleep(.15) # Wait slightly for UI and stuff
 
+def testMoveMouse(controller: Controller):
+    yield from taskMouseClick(controller.getVar("test_var"))
+    yield from taskSleep(5)
+
 if __name__ == "__main__":
     creator = MacroStudio("Bidding Sim")
 
-    creator.addBasicTask(bidScanner, repeat=True, display_name="Monitor Bid State")
-    creator.addBasicTask(plusFinder, repeat=True, display_name="Plus Finder")
+    #creator.addBasicTask(bidScanner, repeat=True, display_name="Monitor Bid State")
+    #creator.addBasicTask(plusFinder, repeat=True, display_name="Plus Finder")
+
+    creator.addBasicTask(testMoveMouse, repeat=True, display_name="Test Mover")
 
     creator.addVar("bid_region", CaptureMode.REGION)
     creator.addVar("bid_btn", CaptureMode.POINT)
@@ -54,5 +60,6 @@ if __name__ == "__main__":
     creator.addVar("first_item_pt", CaptureMode.POINT)
     creator.addVar("sell_region", CaptureMode.REGION)
     creator.addVar("plus_threshold", float, .5)
+    creator.addVar("test_var", CaptureMode.POINT)
 
     creator.launch()
