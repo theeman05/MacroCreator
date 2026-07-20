@@ -1,5 +1,4 @@
 import pydirectinput, pyperclip, math
-import numpy as np
 from typing import Generator, Iterator
 from contextlib import contextmanager
 from PySide6.QtCore import QPoint
@@ -8,6 +7,12 @@ from pydirectinput import MOUSE_PRIMARY
 from macro_studio.core.types_and_enums import TaskInterruptedException
 
 pydirectinput.PAUSE = 0.0
+
+JUMP_OFFSET_PX = 50
+"""Distance (in pixels) short of the target that a jumped move lands, before tweening in."""
+
+FINAL_APPROACH_DURATION = 0.02
+"""Fixed duration for the final tween into the target, and the settle sleep afterward."""
 
 def taskSleep(duration: float=.01) -> Generator[float]:
     """Pauses the task execution for a specified duration.
@@ -108,7 +113,7 @@ def mouseClick(coords: QPoint=None, button: str=MOUSE_PRIMARY) -> Iterator[None]
         else:
             pydirectinput.mouseUp(None, None, button)
 
-def taskMouseClick(coords: QPoint=None, button: str=MOUSE_PRIMARY, duration_mult: float=.1) -> Iterator[float | None]:
+def taskMouseClick(coords: QPoint=None, button: str=MOUSE_PRIMARY, jump_before_move: bool=True) -> Iterator[float | None]:
     """Performs a mouse click (press and release) within a task.
 
     This function presses a mouse button at the given coordinates, yields
@@ -121,8 +126,11 @@ def taskMouseClick(coords: QPoint=None, button: str=MOUSE_PRIMARY, duration_mult
             If None, the current mouse position is used. Defaults to None.
         button: The mouse button to use ('left', 'right', 'middle').
             Defaults to MOUSE_PRIMARY ('left').
-        duration_mult: The extra duration per 2000 pixels based on the travel distance. Max delay is 2x duration mult seconds.
-            Defaults to .1
+        jump_before_move: If True and the target is more than `JUMP_OFFSET_PX` away,
+            the cursor instantly jumps to a point `JUMP_OFFSET_PX` short of the target
+            along the travel line, then tweens the rest of the way in. This can help
+            some games register the click as valid without waiting on a full
+            distance-scaled tween. Defaults to True.
     Yields:
         float: The duration to sleep from `taskSleep`, or None from `taskWaitForResume`.
     """
@@ -133,13 +141,17 @@ def taskMouseClick(coords: QPoint=None, button: str=MOUSE_PRIMARY, duration_mult
 
             travel_distance = math.hypot(target_x - current_x, target_y - current_y)
 
-            if travel_distance > 10 and duration_mult:
-                dynamic_delay = min(duration_mult * 2, (travel_distance / 2000.0) * duration_mult)
+            if travel_distance > 10:
+                if jump_before_move and travel_distance > JUMP_OFFSET_PX:
+                    ratio = (travel_distance - JUMP_OFFSET_PX) / travel_distance
+                    jump_x = current_x + (target_x - current_x) * ratio
+                    jump_y = current_y + (target_y - current_y) * ratio
+                    pydirectinput.moveTo(round(jump_x), round(jump_y))
 
-                pydirectinput.moveTo(coords.x(), coords.y(), duration=dynamic_delay / 2)
+                pydirectinput.moveTo(target_x, target_y, duration=FINAL_APPROACH_DURATION)
 
                 # Yield control to let the game register the UI hover state based on how far we are
-                yield from taskSleep(dynamic_delay)
+                yield from taskSleep(FINAL_APPROACH_DURATION)
 
             # Perform the safe click at the current location
         with mouseClick(coords, button):
